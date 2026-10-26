@@ -18,6 +18,13 @@ dev = [
     "hypothesis>=6.100",
     "pytest-mock>=3.12",
 ]
+reports = [
+    "exchange-calendars>=4.5",
+    "yfinance>=0.2.54",
+]
+github = [
+    "cryptography>=44",
+]
 
 [tool.ruff]
 line-length = 100

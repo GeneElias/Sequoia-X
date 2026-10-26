@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Sequoia-X · 两市研究与模拟组合</title>
+<style>__CSS__</style>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="#overview" aria-label="Sequoia-X 首页"><span class="brand-icon">S</span><span>SEQUOIA<span class="brand-x"> / X</span><small>RESEARCH TERMINAL</small></span></a>
+  <div class="workspace-label">零预算研究工作台</div>
+  <nav aria-label="看板导航"><a class="active" href="#overview">◉　组合总览</a><a href="#signals">▤　两市观察池</a><a href="#positions">▥　模拟持仓</a><a href="#weekly">◷　每周复盘</a><a href="#activity">⇄　模拟订单</a></nav>
+  <div class="sidebar-bottom"><span class="dot"></span> SIMULATION ONLY<p>不连接真实交易账户<br>每次信号 · 模拟100股</p></div>
+</aside>
+<main>
+<header><div class="breadcrumb">研究工作台 <span>/</span> 两市组合</div><div class="header-right"><span id="mode" class="pill">本地预览</span><button id="download" class="button secondary">导出当前快照 ↓</button></div></header>
+<section id="overview" class="intro"><div><div class="eyebrow">MARKET RESEARCH & PAPER PORTFOLIO</div><h1>让每一个判断，<span>都有迹可循。</span></h1><p>观察趋势，复核估值，记录每一次模拟决策。两市分别核算，收益真实留白。</p></div><div class="intro-stamp"><span>数据截止</span><strong id="asof">—</strong><small id="updated">等待数据</small></div></section>
+<div class="market-bar"><div class="segmented" role="group" aria-label="市场选择"><button class="selected" data-market="A">A 股 <small>CNY</small></button><button data-market="US">美股 <small>USD</small></button></div><div class="status-line"><span class="dot" id="heartbeat-dot"></span><span id="heartbeat">定时进程状态待检查</span><span class="separator">|</span><span id="coverage"></span></div></div>
+<div id="notice" class="notice" role="status"></div>
+<section class="metrics" aria-label="组合指标"><article><span class="metric-label">模拟持仓市值 <small id="currency">CNY</small></span><strong id="equity">—</strong><p id="capital">累计虚拟投入 —</p></article><article><span class="metric-label">累计价格盈亏</span><strong id="pnl">—</strong><p>已计模拟买入成本 · 未计股息税费</p></article><article><span class="metric-label">累计投入收益率</span><strong id="return">—</strong><p id="return-note">无投入时不计算收益率</p></article><article><span class="metric-label">合格推荐 / 模拟成交</span><strong id="counts">0 <em>/</em> 0</strong><p>估值未复核不买 · 订单同日去重</p></article></section>
+<section class="chart-row"><article class="panel chart-panel"><div class="panel-head"><div><h2>组合轨迹</h2><p>两市币种分开；资金追加不会被计为盈利</p></div><div class="chart-actions"><select id="chart-metric" aria-label="图表指标"><option value="pnl">累计价格盈亏</option><option value="equity">持仓市值 / 虚拟投入</option><option value="return">累计投入收益率</option></select><select id="chart-range" aria-label="图表区间"><option value="all">全部</option><option value="30">近30天</option><option value="7">近7天</option></select></div></div><div id="chart" class="chart" aria-label="模拟组合走势图"></div><div id="chart-tip" class="chart-tip">悬停查看单日数值</div></article><article class="panel discipline"><div class="eyebrow">DECISION DISCIPLINE</div><h2>先核验，再入场。</h2><ol><li><b>01</b><div>量价确认<small>相对强度、突破与成交量</small></div></li><li><b>02</b><div>估值复核<small>财报来源、三情景、安全边际</small></div></li><li><b>03</b><div>下一交易日模拟买入<small>每只100股 · 持有不卖</small></div></li></ol><div id="delivery" class="delivery">飞书待配置</div></article></section>
+<section id="signals" class="panel"><div class="panel-head"><div><h2>今日研究观察池 <span id="signal-count" class="count-badge">0</span></h2><p>当前股票池内排名，非全市场“最佳股票”；观察项不等于买入推荐。</p></div><div class="table-actions"><input id="search" type="search" placeholder="搜索代码或名称…" aria-label="搜索股票"><select id="status-filter" aria-label="筛选状态"><option value="all">全部状态</option><option value="candidate">合格推荐</option><option value="pending">估值待核验</option><option value="watch">观察 / 等待价格</option></select></div></div><div class="table-scroll"><table><thead><tr><th>股票</th><th><button class="sort" data-sort="raw_price">收盘价 ↕</button></th><th><button class="sort" data-sort="rps">RPS ↕</button></th><th><button class="sort" data-sort="return120">120日回报 ↕</button></th><th>量比</th><th>信号</th><th>估值 / 研究状态</th></tr></thead><tbody id="signals-body"></tbody></table></div><p id="signals-empty" class="empty" hidden>没有符合条件的观察项</p></section>
+<section id="positions" class="panel"><div class="panel-head"><div><h2>模拟持仓</h2><p>拆股调整按上游事件处理；不把缺失价格按零记账。</p></div><span class="pill">仅模拟 · 无实盘</span></div><div class="table-scroll"><table><thead><tr><th>股票</th><th>持股数</th><th>最新价</th><th>投入成本</th><th>市值</th><th>价格盈亏</th></tr></thead><tbody id="positions-body"></tbody></table></div><div id="positions-empty" class="empty"><span>◇</span><strong>等待第一笔合格推荐</strong><p>没有通过估值复核的推荐时，保持空仓。<br>不使用 Demo 持仓填充收益曲线。</p></div></section>
+<section id="weekly" class="panel"><div class="panel-head"><div><h2>每周复盘</h2><p>周收益率 = 周盈亏 ÷（期初市值 + 本周新增投入），非时间加权或年化收益。</p></div><span class="pill">周六 09:00 · 上海时间</span></div><div class="table-scroll"><table><thead><tr><th>周期</th><th>本周成交</th><th>新增投入</th><th>期末市值</th><th>周盈亏</th><th>周收益率</th></tr></thead><tbody id="weekly-body"></tbody></table></div><p id="weekly-empty" class="empty" hidden>尚无周复盘记录</p></section>
+<section id="activity" class="panel"><div class="panel-head"><div><h2>模拟订单记录</h2><p>同一股票后续再次推荐可再买100股；错过成交日不追溯补单。</p></div><span class="pill" id="order-count">0 笔</span></div><div class="table-scroll"><table><thead><tr><th>股票</th><th>信号日</th><th>计划成交日</th><th>数量</th><th>状态</th></tr></thead><tbody id="orders-body"></tbody></table></div><p id="orders-empty" class="empty">尚无模拟订单</p></section>
+<footer><span>SEQUOIA-X <b>×</b> 价值研究复核</span><p id="basis"></p><p>静态快照，不是实时行情。页面不会访问外部接口或读取任何密钥。</p></footer>
+</main>
+<script id="dashboard-data" type="application/json">__DATA__</script>
+<script>__JS__</script>
+</body></html>

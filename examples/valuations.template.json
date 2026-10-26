@@ -1,0 +1,29 @@
+{
+  "US:MSFT": {
+    "method": "fcff_dcf",
+    "currency": "USD",
+    "reviewed": false,
+    "reviewed_at": null,
+    "financial_as_of": null,
+    "fcff": null,
+    "shares": null,
+    "net_debt": null,
+    "discount_rate": null,
+    "terminal_growth": null,
+    "years": 5,
+    "growth": {"bear": null, "base": null, "bull": null},
+    "required_margin": null,
+    "quality_status": "pending",
+    "quality_reason": "待审查现金流、负债、管理层与护城河",
+    "assumptions_reason": "待说明FCFF正常化、币种、WACC、增长与永续假设的依据",
+    "sources": [
+      {"upstream": "SEC", "url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json"},
+      {"upstream": "StockAnalysis", "url": "https://stockanalysis.com/stocks/msft/financials/"}
+    ],
+    "source_checks": [
+      {"field": "fcff", "primary": null, "secondary": null},
+      {"field": "shares", "primary": null, "secondary": null},
+      {"field": "net_debt", "primary": null, "secondary": null}
+    ]
+  }
+}

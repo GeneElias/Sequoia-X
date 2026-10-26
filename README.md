@@ -16,6 +16,38 @@ Sequoia-X V2 是面向 A 股市场的量化选股系统，基于现代 Python �
 
 ## 两种运行模式
 
+### 新增：两市研究报告与飞书卡片
+
+```bash
+uv sync --frozen --extra reports --extra dev
+.venv/bin/python -m sequoia_x.reporting
+```
+
+默认生成本地 Markdown、JSON 报告和飞书卡片，不发送消息。支持美股 yfinance 主源、global-stock-data 新浪路由备源、A 股免费日线，以及显式复核输入驱动的估值检查。资料不足时标记“待核验”，不会虚构目标价。配置、估值模板和发送命令见 [研究报告与飞书推送](docs/research-reports.md)。
+
+### 每日100股模拟买入与每周复盘（两市）
+
+```bash
+.venv/bin/python -m sequoia_x.reporting.simulation daily
+.venv/bin/python -m sequoia_x.reporting.simulation weekly
+```
+
+只对合格推荐登记每只100股，下个交易日开盘模拟成交，重复推荐可加仓、同日运行去重。两市分别核算，默认持有不卖，支持定时生成日报和周复盘。模拟口径、费用假设和云环境定时限制见 [模拟组合说明](docs/paper-trading.md)。
+
+### 交互看板
+
+```bash
+.venv/bin/python -m sequoia_x.reporting.dashboard
+```
+
+生成可离线打开的 `reports/dashboard/index.html`，包含两市观察池、收益轨迹、持仓、订单与每周复盘。默认真实数据只在本地；GitHub Pages工作流仅部署虚构演示。平台比较、权限边界与发布步骤见 [看板说明](docs/dashboard.md)。
+
+### GitHub Actions 后台部署
+
+已提供两市每日任务、每周复盘和认证加密状态持久化的工作流。自动任务默认关闭，真实账本存储需先确认隐私授权并配置Actions Secrets，再验证迁移，避免与云端进程重复执行。安装完整依赖使用 `uv sync --frozen --extra reports --extra github --extra dev`。步骤见 [GitHub Actions 部署](docs/github-actions.md)。
+
+### 原有 A 股流程
+
 ```bash
 python main.py               # 日常模式：8进程增量补数据 + 跑策略 + 飞书推送（2~3分钟）
 python main.py --backfill     # 回填模式：全市场历史K线一次性灌入（约12分钟）

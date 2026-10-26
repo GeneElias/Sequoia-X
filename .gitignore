@@ -36,3 +36,8 @@ build/
 
 # Hypothesis 测试缓存
 .hypothesis/
+
+# Generated research reports, market cache and notification ledger
+reports/
+valuations.local.json
+_site/
