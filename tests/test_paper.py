@@ -181,3 +181,14 @@ def test_next_session_skips_weekends_and_holidays():
     assert next_session("US", "2026-10-23") == "2026-10-26"
     assert next_session("US", "2025-11-26") == "2025-11-28"
     assert next_session("A", "2026-10-23") == "2026-10-26"
+
+
+def test_cloud_copy_cannot_write_after_github_cutover(tmp_path, monkeypatch):
+    import json
+    from sequoia_x.reporting.simulation import Simulation
+    marker = tmp_path / "_state/github-migration.json"
+    marker.parent.mkdir()
+    marker.write_text(json.dumps({"phase": "github_active"}))
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    with pytest.raises(RuntimeError, match="GitHub接管"):
+        Simulation(tmp_path)

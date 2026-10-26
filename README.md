@@ -44,7 +44,7 @@ uv sync --frozen --extra reports --extra dev
 
 ### GitHub Actions 后台部署
 
-已提供两市每日任务、每周复盘和认证加密状态持久化的工作流。自动任务默认关闭，真实账本存储需先确认隐私授权并配置Actions Secrets，再验证迁移，避免与云端进程重复执行。安装完整依赖使用 `uv sync --frozen --extra reports --extra github --extra dev`。步骤见 [GitHub Actions 部署](docs/github-actions.md)。
+已提供两市每日任务、每周复盘和认证加密状态持久化的工作流。当前迁移版默认启用定时任务，可用仓库变量 `SEQUOIA_ENABLED=false` 暂停。新部署必须先确认真实账本的隐私授权、配置Actions Secrets并验证状态，再启用业务执行，避免与云端进程重复运行。安装完整依赖使用 `uv sync --frozen --extra reports --extra github --extra dev`。步骤见 [GitHub Actions 部署](docs/github-actions.md)。
 
 ### 原有 A 股流程
 

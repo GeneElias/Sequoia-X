@@ -38,7 +38,8 @@ def main(argv=None) -> int:
         state = GitHubState(Path.cwd(), args.root, key)
         state.restore()
         if task == "validate":
-            print(json.dumps({"task": task, "state": "decrypted_and_integrity_checked", "sent": False}))
+            print(json.dumps({"task": task, "state": "decrypted_and_integrity_checked", "sent": False,
+                              "schedule_paused": os.environ.get("SEQUOIA_SCHEDULE_PAUSED") == "true"}))
             return 0
         if not os.environ.get("FEISHU_REPORT_WEBHOOK_URL"):
             raise StateError("缺少飞书机器人配置，尚未处理模拟订单")

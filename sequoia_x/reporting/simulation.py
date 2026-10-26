@@ -35,6 +35,10 @@ class Simulation:
     def __init__(self, root: Path, valuations: Path | None = None, send: bool = False,
                  slippage_bps: str = "5", fee_per_order: str = "0", checkpoint=None):
         self.root = root
+        marker = root / "_state" / "github-migration.json"
+        if marker.exists() and not os.environ.get("GITHUB_ACTIONS") == "true":
+            if json.loads(marker.read_text()).get("phase") == "github_active":
+                raise RuntimeError("后台已由GitHub接管，禁止写入过期云端账本；预览请使用reporting入口")
         self.valuations_path = valuations
         self.send = send
         self.checkpoint = checkpoint

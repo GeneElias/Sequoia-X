@@ -109,9 +109,9 @@ def test_failed_pre_send_checkpoint_never_calls_remote(tmp_path):
     post.assert_not_called()
 
 
-def test_live_workflow_is_opt_in_serial_and_preserves_timezone():
+def test_live_workflow_can_pause_is_serial_and_preserves_timezone():
     text = Path('.github/workflows/research-schedule.yml').read_text()
-    assert "vars.SEQUOIA_ENABLED == 'true'" in text
+    assert "vars.SEQUOIA_ENABLED != 'false'" in text
     assert "cancel-in-progress: false" in text and "contents: write" in text
     assert all(cron in text for cron in ('0 9 * * 1-5','30 23 * * 1-5','0 1 * * 6'))
     assert 'pull_request:' not in text and 'upload-artifact' not in text
