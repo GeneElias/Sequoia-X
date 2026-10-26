@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: 'validate checks encrypted state without sending; others run the real simulation'
+        description: 'selftest uses synthetic tests only; validate checks encrypted state without sending'
         type: choice
-        options: [validate, daily_A, daily_US, weekly]
-        default: validate
+        options: [selftest, validate, daily_A, daily_US, weekly]
+        default: selftest
 
 permissions:
   contents: write
@@ -34,7 +34,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install locked free reporting dependencies
-        run: uv sync --frozen --extra reports --extra github --python 3.12
+        run: uv sync --frozen --extra reports --extra github --extra dev --python 3.12
       - name: Restore, run and persist encrypted paper state
         env:
           SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}

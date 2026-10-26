@@ -14,7 +14,7 @@
 
 GitHub可能延迟甚至漏掉计划任务，不能承诺准点到分钟；无活动的公开仓库也可能被GitHub暂停定时工作流，需关注平台通知。任务错过开盘成交日不会追溯补买，沿用原模拟口径。
 
-自动任务只有仓库变量 **`SEQUOIA_ENABLED=true`** 时才执行；没有该变量时不启动runner。手动 Run workflow 可选择 `validate`（仅解密与完整性检查、不发送）、`daily_A`、`daily_US` 或 `weekly`。
+自动任务只有仓库变量 **`SEQUOIA_ENABLED=true`** 时才执行；没有该变量时不启动runner。手动 Run workflow 默认 `selftest`（仅虚构测试数据，不需要密钥、不发送），也可选择 `validate`（仅解密与完整性检查、不发送）、`daily_A`、`daily_US` 或 `weekly`。
 
 ## 真实账本隐私与持久化
 
