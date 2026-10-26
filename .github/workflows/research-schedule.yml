@@ -22,6 +22,7 @@ concurrency:
 
 jobs:
   research:
+    name: "Research (schedules enabled: ${{ vars.SEQUOIA_ENABLED != 'false' }})"
     # Migration validated: schedules are on by default; set the repository variable
     # SEQUOIA_ENABLED=false to pause without editing this workflow.
     if: github.event_name == 'workflow_dispatch' || vars.SEQUOIA_ENABLED != 'false'
