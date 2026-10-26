@@ -1,6 +1,6 @@
 # 将两市日报、模拟账本和周复盘部署到 GitHub Actions
 
-仓库：`GeneElias/Sequoia-X`（公开）。标准Linux托管runner在公开仓库通常免费；不使用大型runner、不购买数据。GitHub Pages已构建的是**虚构演示看板**，与后台任务是否运行独立。
+仓库：`GeneElias/Sequoia-X`（公开）。标准Linux托管runner在公开仓库通常免费；不使用大型runner、不购买数据。GitHub Pages当前是**无虚构样例的公开空页面**，与后台任务是否运行独立。
 
 ## 定时工作流
 
@@ -37,7 +37,7 @@ Settings → Secrets and variables → Actions → Secrets：
 Variables：
 
 - `SEQUOIA_ENABLED`：可选，设为false暂停；当前迁移完成版在未设置时默认启用。新部署未准备好凭证或账本前，应先暂停。
-- `FEISHU_DASHBOARD_URL`：可选，已上线的公开演示Pages链接。仅用于标记“公开演示”的按钮，不发布真实看板。
+- `FEISHU_DASHBOARD_URL`：可选，已上线的公开Pages链接。用于“打开看板”按钮，不发布真实账本。
 
 当前连接可读写Git仓库，但Actions设置和Secrets管理接口返回 `Resource not accessible by integration`。仓库admin状态不等于当前连接拥有Secrets接口权限；不能因而声称凭证已配置或自动任务已启用，也不应为此向用户索取PAT。可由仓库管理员在上述页面保存所需Secrets。
 
@@ -53,7 +53,7 @@ Variables：
 
 ## 维护边界
 
-- 标准任务不生成或公开真实Pages数据，只在加密状态中保存私密报告；公开站点仍是演示。
+- 标准任务不生成或公开真实Pages数据，只在加密状态中保存私密报告；公开站点仅显示无数据空状态。
 - 后续更新财报假设需基于最新远端状态，不能用过期本机账本覆盖线上状态。
 - 不把Secrets放在命令行参数、Git远端URL、日志或Artifacts里；不要打开shell tracing或dump环境。
 - 当前加密分支会保留密文历史，长期使用需关注仓库体积；不自动删历史或重置账本。

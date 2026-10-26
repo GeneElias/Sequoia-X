@@ -11,12 +11,12 @@ def card():
     return {"msg_type": "interactive", "card": {"elements": []}}
 
 
-def test_optional_demo_button_is_hashed_without_mutating_original():
+def test_optional_dashboard_button_is_hashed_without_mutating_original():
     original = [card()]
     result = with_dashboard(original, "https://geneelias.github.io/Sequoia-X/")
     assert original[0]["card"]["elements"] == []
     button = result[0]["card"]["elements"][0]["actions"][0]
-    assert "公开演示" in button["text"]["content"]
+    assert button["text"]["content"] == "打开看板"
     assert content_id(result[0]) != content_id(original[0])
     assert with_dashboard(original, None) is original
 

@@ -72,13 +72,13 @@
   }
   function render(){
     const m=DATA.markets[market], last=m.history[m.history.length-1], invested=last&&num(last.contributed)>0;
-    set("asof",m.as_of||"等待首次报告");set("currency",m.currency);set("coverage",`有效观察项 ${m.valid} / ${m.pool_size}`);
+    set("asof",m.as_of||(DATA.audience==="public"?"尚未公开数据":"等待首次报告"));set("currency",m.currency);set("coverage",`已发布观察项 ${m.valid} / ${m.pool_size}`);
     set("equity",last?money(last.equity):"—");set("capital",`累计虚拟投入 ${last?money(last.contributed):"—"} ${m.currency}`);
     set("pnl",last?money(last.pnl):"—");tone($("pnl"),last?.pnl);set("return",last?percent(last.return):"—");tone($("return"),last?.return);
     set("return-note",invested?"价格盈亏 / 累计虚拟投入，非年化":"无投入，不计算收益率");
-    set("counts",`${m.candidate_count} / ${m.fill_count??m.fills.length}`);
-    set("notice",DATA.demo?"演示模式：所有股票、指标、交易和收益均为虚构示例，不是实际投资结果。":!m.complete?"数据待补齐：观察池未完整取数，暂停RPS和买入推荐。":m.candidate_count===0?"保持纪律：当前没有完成量价与估值双重核验的推荐。观察项不自动转为模拟买单。":"合格推荐仅供研究；模拟订单在下一交易日开盘结算，不使用未来价格补单。");
-    const delivery={blocked_missing_webhook:"飞书待配置 · 日报已保存在本地",preview_only:"本地预览 · 未发送到飞书",attempted:"飞书已尝试发送 · 以发送账本为准",demo:"公开演示 · 未发送消息"};set("delivery",delivery[m.delivery]||"飞书发送状态待核验");
+    set("counts",DATA.audience==="public"?"— / —":`${m.candidate_count} / ${m.fill_count??m.fills.length}`);
+    set("notice",DATA.audience==="public"?"公开页面尚未发布真实数据。研究报告与模拟账本通过飞书和加密状态保存；这里不填充虚构内容。":!m.complete?"数据待补齐：观察池未完整取数，暂停RPS和买入推荐。":m.candidate_count===0?"保持纪律：当前没有完成量价与估值双重核验的推荐。观察项不自动转为模拟买单。":"合格推荐仅供研究；模拟订单在下一交易日开盘结算，不使用未来价格补单。");
+    const delivery={blocked_missing_webhook:"飞书待配置 · 日报已保存在本地",preview_only:"本地预览 · 未发送到飞书",attempted:"飞书已尝试发送 · 以发送账本为准"};set("delivery",DATA.audience==="public"?"真实报告通过飞书推送":delivery[m.delivery]||"飞书发送状态待核验");
     document.querySelectorAll("[data-market]").forEach(b=>{b.classList.toggle("selected",b.dataset.market===market);b.setAttribute("aria-pressed",String(b.dataset.market===market));});
     renderSignals(m);renderPositions(m);renderWeekly(m);renderOrders(m);renderChart(m);
   }
@@ -87,12 +87,12 @@
   for(const id of ["chart-metric","chart-range"])$(id).addEventListener("change",()=>renderChart(DATA.markets[market]));
   document.querySelectorAll("[data-sort]").forEach(b=>b.addEventListener("click",()=>{descending=b.dataset.sort===sortKey?!descending:true;sortKey=b.dataset.sort;renderSignals(DATA.markets[market]);}));
   document.querySelectorAll("nav a").forEach(a=>a.addEventListener("click",()=>{document.querySelectorAll("nav a").forEach(x=>x.classList.toggle("active",x===a));}));
-  $("download").addEventListener("click",()=>{const blob=new Blob([JSON.stringify({generated_at:DATA.generated_at,demo:DATA.demo,market,...DATA.markets[market]},null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=el("a");a.href=url;a.download=`sequoia-${market}-${DATA.markets[market].as_of||"snapshot"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-  set("mode",DATA.demo?"虚构演示":"本地数据 · 未公开");
+  $("download").addEventListener("click",()=>{const blob=new Blob([JSON.stringify({generated_at:DATA.generated_at,audience:DATA.audience,market,...DATA.markets[market]},null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=el("a");a.href=url;a.download=`sequoia-${market}-${DATA.markets[market].as_of||"snapshot"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+  set("mode",DATA.audience==="public"?"公开看板":"本地快照");
   set("updated","生成于 "+new Date(DATA.generated_at).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}));
   set("basis",DATA.basis);
   const hb=DATA.scheduler.heartbeat;
-  set("heartbeat",hb?"心跳快照 "+new Date(hb).toLocaleTimeString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}):"未记录定时进程心跳");
+  set("heartbeat",DATA.audience==="public"?"后台状态未公开":hb?"心跳快照 "+new Date(hb).toLocaleTimeString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}):"未记录定时进程心跳");
   $("heartbeat").title="静态快照，不代表进程此刻在线。"+(DATA.scheduler.lifetime||"");
   if(!hb)$("heartbeat-dot").classList.add("offline");
   render();

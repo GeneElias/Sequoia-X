@@ -1,4 +1,4 @@
-name: Deploy dashboard demo (no real portfolio data)
+name: Deploy public dashboard (no private portfolio data)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: dashboard-demo-pages
+  group: dashboard-pages
   cancel-in-progress: false
 
 jobs:
@@ -23,12 +23,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build synthetic demo only
-        run: python -m sequoia_x.reporting.dashboard --demo --output _site
+      - name: Build public page without sample or private data
+        run: python -m sequoia_x.reporting.dashboard --public-empty --output _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-      - name: Deploy demo
+      - name: Deploy dashboard
         id: deployment
         uses: actions/deploy-pages@v4

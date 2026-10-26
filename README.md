@@ -40,7 +40,7 @@ uv sync --frozen --extra reports --extra dev
 .venv/bin/python -m sequoia_x.reporting.dashboard
 ```
 
-生成可离线打开的 `reports/dashboard/index.html`，包含两市观察池、收益轨迹、持仓、订单与每周复盘。默认真实数据只在本地；GitHub Pages工作流仅部署虚构演示。平台比较、权限边界与发布步骤见 [看板说明](docs/dashboard.md)。
+生成可离线打开的 `reports/dashboard/index.html`，包含两市观察池、收益轨迹、持仓、订单与每周复盘。默认真实数据只在本地；GitHub Pages公开页面不含虚构示例，未授权公开的真实数据保持私有。平台比较、权限边界与发布步骤见 [看板说明](docs/dashboard.md)。
 
 ### GitHub Actions 后台部署
 

@@ -14,14 +14,22 @@ def select(obj: dict, fields: str) -> dict:
     return {k: obj.get(k) for k in fields.split()}
 
 
-def dataset(root: Path) -> dict:
+def empty_dataset(public: bool = False) -> dict:
     data = {"schema_version": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
-            "demo": False, "audience": "local", "markets": {}, "scheduler": {},
+            "audience": "public" if public else "local", "markets": {}, "scheduler": {},
             "basis": "仅模拟；价格收益，不含股息税费；CNY/USD分别核算；新增投入不是利润。"}
     for market, currency in [("A", "CNY"), ("US", "USD")]:
         data["markets"][market] = {"currency": currency, "as_of": None, "valid": 0, "pool_size": 0,
                                     "candidate_count": 0, "observations": [], "history": [],
-                                    "orders": [], "fills": [], "fill_count": 0, "positions": [], "weekly": []}
+                                    "orders": [], "fills": [], "fill_count": 0, "positions": [], "weekly": [],
+                                    "complete": False}
+    if public:
+        data["basis"] = "公开页面尚未发布真实研究与账本数据；不生成虚构股票、持仓或收益。"
+    return data
+
+
+def dataset(root: Path) -> dict:
+    data = empty_dataset()
     # Whitelist each field. Never export raw SQLite, assumptions, source files, URLs or .env.
     for path in sorted(root.glob("paper/daily/*/report.json")):
         report = json.loads(path.read_text())
@@ -81,28 +89,9 @@ def dataset(root: Path) -> dict:
     return data
 
 
-def demo_dataset() -> dict:
-    """A safe public template: synthetic symbols only, no private report or ledger reads."""
-    data = {"schema_version": 1, "generated_at": datetime.now(timezone.utc).isoformat(),
-            "demo": True, "audience": "public-demo", "scheduler": {}, "markets": {},
-            "basis": "公开演示模板：所有股票代码、指标、成交与收益均为虚构示例，不是投资结果。"}
-    for market, currency in [("A", "CNY"), ("US", "USD")]:
-        data["markets"][market] = {"currency": currency, "as_of": "2026-10-23", "complete": True,
-            "valid": 2, "pool_size": 2, "candidate_count": 0,
-            "observations": [{"symbol": f"DEMO_{market}_{i}", "name": f"演示观察项{i}", "date": "2026-10-23",
-                "raw_price": 100 + i, "currency": currency, "rps": 50 * i, "return120": .03 * i,
-                "volume_ratio": 1.1, "breakout_pct": -.02, "status": "观察：演示非推荐", "confirmed": False,
-                "signals": ["虚构量价示例"], "valuation": {"status": "待核验"}, "source": "synthetic", "upstream": "synthetic"}
-                for i in (1, 2)],
-            "history": [{"day": f"2026-10-{day}", "equity": 10000 + (day - 19) * 50,
-                         "contributed": 10000, "pnl": (day - 19) * 50, "return": (day - 19) * .005,
-                         "complete": True} for day in range(19, 24)],
-            "positions": [], "orders": [], "fills": [], "weekly": [], "delivery": "demo"}
-    return data
-
-
-def export_dashboard(root: Path, output: Path, demo: bool = False) -> Path:
-    data = demo_dataset() if demo else dataset(root)
+def export_dashboard(root: Path, output: Path, public: bool = False) -> Path:
+    # Public pages never read a private root, including one containing valid reports.
+    data = empty_dataset(public=True) if public else dataset(root)
     # Keep JSON inside a non-executable script element without allowing </script> breakout.
     encoded = json.dumps(data, ensure_ascii=False, allow_nan=False)
     escaped = (encoded.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
@@ -124,10 +113,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="生成离线交互看板，默认私密本地数据；不自动公开发布")
     parser.add_argument("--root", type=Path, default=Path("reports"))
     parser.add_argument("--output", type=Path, default=Path("reports/dashboard"))
-    parser.add_argument("--demo", action="store_true", help="只生成虚构公开演示，不读取真实报告/账本")
+    parser.add_argument("--public-empty", action="store_true", help="生成无数据公开页面；不读取真实报告/账本，不生成示例")
     args = parser.parse_args(argv)
-    path = export_dashboard(args.root, args.output, args.demo)
-    print(f"看板已生成：{path}（{'虚构演示' if args.demo else '本地私密数据，未公开发布'}）")
+    path = export_dashboard(args.root, args.output, args.public_empty)
+    print(f"看板已生成：{path}（{'公开空状态' if args.public_empty else '本地私密数据，未公开发布'}）")
     return 0
 
 

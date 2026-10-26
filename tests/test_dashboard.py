@@ -1,10 +1,10 @@
-"""Dashboard reads only approved fields; public demo never reads a real portfolio."""
+"""Dashboard reads approved fields; public shell never reads a private portfolio."""
 
 import json
 from pathlib import Path
 import sqlite3
 
-from sequoia_x.reporting.dashboard import dataset, export_dashboard, demo_dataset
+from sequoia_x.reporting.dashboard import dataset, export_dashboard
 from sequoia_x.reporting.paper import PaperBook
 
 
@@ -48,12 +48,14 @@ def test_export_escapes_script_termination_and_is_self_contained(tmp_path):
     assert "connect-src 'none'" in text and 'script src=' not in text
 
 
-def test_demo_has_only_synthetic_symbols_and_never_reads_real_files(tmp_path):
+def test_public_page_is_empty_and_never_reads_real_files(tmp_path):
     fixture_report(tmp_path)
-    p = export_dashboard(tmp_path, tmp_path / "demo", demo=True)
+    p = export_dashboard(tmp_path, tmp_path / "public", public=True)
     data = json.loads(p.with_name("dashboard.json").read_text())
-    assert data["demo"] and "MSFT" not in json.dumps(data)
-    assert all(x["symbol"].startswith("DEMO_") for m in data["markets"].values() for x in m["observations"])
+    assert data["audience"] == "public" and "MSFT" not in json.dumps(data)
+    assert "DEMO_" not in p.read_text() and "演示" not in p.read_text()
+    assert all(not m[field] for m in data["markets"].values()
+               for field in ("observations", "positions", "history", "orders", "fills", "weekly"))
 
 
 def test_export_does_not_mutate_account_and_keeps_currencies_separate(tmp_path):
@@ -70,8 +72,9 @@ def test_export_does_not_mutate_account_and_keeps_currencies_separate(tmp_path):
     assert data["markets"]["US"]["history"][0]["return"] is None
 
 
-def test_demo_deployment_workflow_cannot_read_or_publish_real_portfolio():
-    text = Path('.github/workflows/dashboard-demo.yml').read_text()
-    assert '--demo --output _site' in text
+def test_public_deployment_workflow_cannot_read_or_publish_real_portfolio():
+    assert not Path('.github/workflows/dashboard-demo.yml').exists()
+    text = Path('.github/workflows/dashboard-pages.yml').read_text()
+    assert '--public-empty --output _site' in text
     assert 'workflow_dispatch' in text and 'schedule:' not in text
     assert 'FEISHU' not in text and 'paper.sqlite' not in text

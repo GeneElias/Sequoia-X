@@ -6,7 +6,7 @@
 2. 机器人名称可设为“Sequoia-X 选股复盘”。如要求安全配置，选择关键词并填写 `Sequoia-X`，日报和周报标题都包含这个关键词。
 3. 复制完整Webhook到项目本地 `.env` 的 `FEISHU_REPORT_WEBHOOK_URL`。Webhook含密钥，不要发到聊天、截图或提交Git。
 4. 如果同时启用签名校验，将对应机器人签名密钥填入 `FEISHU_REPORT_SECRET`；未启用则留空。关键词和签名都启用时需同时满足。
-5. Pages网站真正上线并确认可访问后，可将其无查询参数的HTTPS地址填入 `FEISHU_DASHBOARD_URL`。当前只支持GitHub Pages演示入口，卡片按钮明确标记“公开演示”，不把虚构收益当作真实账本。
+5. Pages网站真正上线并确认可访问后，可将其无查询参数的HTTPS地址填入 `FEISHU_DASHBOARD_URL`。当前支持GitHub Pages入口，卡片按钮为“打开看板”；公开页没有虚构样例，未公开真实账本。
 
 ```dotenv
 FEISHU_REPORT_WEBHOOK_URL=<你的完整机器人Webhook，仅在本地填写>
@@ -29,7 +29,7 @@ cd /workspace/Sequoia-X
 .venv/bin/python -m sequoia_x.reporting --send-existing reports/paper/daily/2026-10-23-A/cards.json --send
 ```
 
-缺Webhook时本地报告继续生成，但不会推送。GitHub Pages只是静态演示；群里的真实日报/周报由本地任务产生，不会因为打开网页而自动更新或交易。云环境休眠后定时进程停止，不能靠Pages唤醒。
+缺Webhook时本地报告继续生成，但不会推送。GitHub Pages只是静态页面；群里的真实日报/周报由本地任务产生，不会因为打开网页而自动更新或交易。云环境休眠后定时进程停止，不能靠Pages唤醒。
 
 ## 当前站点部署状态
 

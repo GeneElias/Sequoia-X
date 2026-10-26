@@ -20,18 +20,18 @@ class DeliveryError(RuntimeError):
 
 
 def with_dashboard(cards: list[dict], url: str | None) -> list[dict]:
-    """Optional public-demo entry, included in content hashing for accurate deduplication."""
+    """Optional public dashboard entry, included in the deduplication hash."""
     if not url:
         return cards
     parsed = urlparse(url)
     if (parsed.scheme != "https" or not (parsed.hostname or "").endswith(".github.io")
             or parsed.username or parsed.password or parsed.query or parsed.fragment
             or parsed.port not in (None, 443)):
-        raise DeliveryError("演示看板地址必须为无凭证和查询参数的 GitHub Pages HTTPS 地址")
+        raise DeliveryError("看板地址必须为无凭证和查询参数的 GitHub Pages HTTPS 地址")
     result = json.loads(json.dumps(cards))
     for card in result:
         card["card"]["elements"].append({"tag": "action", "actions": [{
-            "tag": "button", "text": {"tag": "plain_text", "content": "打开看板（公开演示）"},
+            "tag": "button", "text": {"tag": "plain_text", "content": "打开看板"},
             "type": "primary", "url": url}]})
         if len(json.dumps(card, ensure_ascii=False).encode()) > 19000:
             raise DeliveryError("添加看板入口后的消息过长，请减少单卡观察项")
