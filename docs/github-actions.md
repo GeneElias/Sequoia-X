@@ -46,7 +46,7 @@ Variables：
 1. 合并/部署源码与工作流，自动任务保持关闭。测试：`uv sync --frozen --extra reports --extra github --extra dev` 后运行测试。
 2. 明确真实状态存储的隐私授权；得到允许后，备份密钥并初始化加密状态分支，保留已有持仓和发送去重记录。
 3. 管理员配置上述Secrets。Actions中先手动运行 `validate`，确认解密、账本完整性成功。
-4. 停止本次云环境中已启动的模拟daemon，避免云端和Actions成为两个写入者。再设 `SEQUOIA_ENABLED=true`，手动跑一个实际任务并检查飞书业务返回和新的加密状态提交。
+4. 停止本次云环境中已启动的模拟daemon，避免云端和Actions成为两个写入者；此时还要把最新的云端账本最终同步到加密分支，不能直接接管初始化时的旧快照。最终同步须先验证远端可解密且自动任务未开启，快进保存当前已停止写入的本地状态，不能把旧远端恢复覆盖到最新本地账本。再设 `SEQUOIA_ENABLED=true`，手动跑一个实际任务并检查飞书业务返回和新的加密状态提交。
 5. 成功后才能宣称GitHub已接管每日执行。GitHub失败时不要让旧云端写过期副本；回滚也应先停一端、恢复最新远端状态后再启动另一端。
 
 未完成这些步骤时，原云端进程继续运行，不能把“源码已上传”说成“后台已迁移完成”。
@@ -57,3 +57,16 @@ Variables：
 - 后续更新财报假设需基于最新远端状态，不能用过期本机账本覆盖线上状态。
 - 不把Secrets放在命令行参数、Git远端URL、日志或Artifacts里；不要打开shell tracing或dump环境。
 - 当前加密分支会保留密文历史，长期使用需关注仓库体积；不自动删历史或重置账本。
+
+## 当前迁移进度（2026-10-26）
+
+- 用户已明确同意把加密模拟账本、报告和发送记录保存到本公开仓库的专用分支。
+- 已初始化 `sequoia-state`。远端下载、Fernet认证解密和SQLite完整性检查均通过，远端只含 README.md 与 state.fernet。
+- 本地恢复密钥位于 ignored 的 `reports/_state/github-state.key`，权限0600；密钥没有提交公开代码，也没有显示在聊天或日志。
+- Secrets保存操作被自动审批拦截：需要对账本密钥、现有飞书Webhook和签名密钥传输到仓库Actions Secrets明确授权。当前GitHub连接也缺少Secrets管理权限，尚未保存这些Secrets。
+- 最直接的配置入口是仓库 Settings → Secrets and variables → Actions → New repository secret：
+  - `SEQUOIA_STATE_KEY`：本地上述key文件的值。
+  - `FEISHU_REPORT_WEBHOOK_URL`：本地 `.env` 对应变量的值。
+  - `FEISHU_REPORT_SECRET`：本地 `.env` 对应签名密钥的值（当前机器人启用了签名）。
+- 仅在GitHub安全表单填写值，不要将值发到聊天或粘贴到工作流源码。
+- 原云端daemon继续运行。真实Actions任务未启用；还没有完成最终同步和接管，初始化快照不能被当成未来切换时的最新账本。
