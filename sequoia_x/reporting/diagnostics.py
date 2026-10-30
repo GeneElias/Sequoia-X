@@ -31,7 +31,14 @@ def main():
                 try:
                     h = getattr(provider, method)(symbol, 'A', latest_session('A'))
                     row.update(length=len(h.frame), last=str(h.frame.index[-1]))
-                    h.frame = normalize(h.frame, latest_session('A'))
+                    try:
+                        h.frame = normalize(h.frame, latest_session('A'))
+                    except ValueError as exc:
+                        row['normalize_reason'] = str(exc)
+                        f=h.frame.copy(); f.columns=[str(c).lower().replace(' ','_') for c in f.columns]
+                        row['bad_high'] = f.index[f.high < f[['open','close','low']].max(axis=1)].astype(str).tolist()[-15:]
+                        row['bad_low'] = f.index[f.low > f[['open','close','high']].min(axis=1)].astype(str).tolist()[-15:]
+                        raise
                     try:
                         validate_window(h.frame, 'A', latest_session('A')); row['status']='ok'
                     except ValueError as exc:
@@ -54,8 +61,15 @@ def main():
             for name in ['资产负债表','利润表','现金流量表']:
                 try:
                     df=ak.stock_financial_report_sina(stock=symbol,symbol=name)
-                    result['financials'][symbol][name]=json.loads(df.head(3).to_json(orient='records',force_ascii=False))
+                    result['financials'][symbol][name]=json.loads(df[(df['报告日'].astype(str).str.endswith('1231'))].head(4).to_json(orient='records',force_ascii=False))
                 except Exception as exc:result['financials'][symbol][name]={'error':type(exc).__name__}
+        try:
+            sec=requests.get('https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json',headers={'User-Agent':'Sequoia-X research admin@geneelias.com'},timeout=15)
+            result['sec_status']=sec.status_code
+            if sec.ok:
+                facts=sec.json()['facts']['us-gaap']
+                result['sec_tags']={k:v for k,v in facts.items() if any(term in k.lower() for term in ['netcashprovidedbyusedinoperat','paymentstoacquireproperty','commonstocksharesoutstanding','longtermdebt','shortterm','commercialpaper','financelease','interestexpense','sharebasedcompensation','cashcashequivalents'])}
+        except Exception as exc:result['sec_error']=type(exc).__name__
         headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'}
         base='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']
         response=requests.get(base+'/actions/workflows/research-schedule.yml/runs',params={'per_page':16},headers=headers,timeout=15)

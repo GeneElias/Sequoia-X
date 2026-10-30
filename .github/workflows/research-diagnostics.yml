@@ -27,3 +27,5 @@ jobs:
         env:
           SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
           GH_TOKEN: ${{ github.token }}
+
+# Probe round 2: annual statement provenance and strict OHLC failures.
