@@ -29,7 +29,7 @@ class StateError(RuntimeError):
 
 def archive_paths(root: Path, valuations: Path | None = None) -> dict[str, Path]:
     paths = {}
-    for name in ("paper.sqlite", "delivery.sqlite"):
+    for name in ("paper.sqlite", "delivery.sqlite", "diagnostics.json"):
         p = root / "_state" / name
         if p.exists():
             paths["state/" + name] = p
@@ -92,7 +92,7 @@ def restore_snapshot(token: bytes, root: Path, key: bytes) -> None:
             parts = PurePosixPath(member.name).parts
             if not member.isfile() or ".." in parts or not parts or PurePosixPath(member.name).is_absolute():
                 raise StateError("状态归档包含非法路径")
-            if parts[0] == "state" and len(parts) == 2 and parts[1] in {"paper.sqlite", "delivery.sqlite", "valuations.json"}:
+            if parts[0] == "state" and len(parts) == 2 and parts[1] in {"paper.sqlite", "delivery.sqlite", "valuations.json", "diagnostics.json"}:
                 target = root / "_state" / parts[1]
             elif (parts[0] in {"daily", "weekly"} and len(parts) == 3
                   and parts[2] in {"report.json", "paper.json", "cards.json", "report.md", "review.json", "review.md"}):
