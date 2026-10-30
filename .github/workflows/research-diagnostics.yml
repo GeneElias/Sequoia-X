@@ -32,3 +32,5 @@ jobs:
 # Probe round 2: annual statement provenance and strict OHLC failures.
 
 # Full preview checks both markets and financial gates without orders or messages.
+
+# Check truthful project-contact user agents and quote metadata.

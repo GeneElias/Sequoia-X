@@ -28,7 +28,7 @@ def main():
     with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
         if '--probe' in sys.argv:
             result['network_probes'] = []
-            for label,agent in [('original','Sequoia-X research admin@geneelias.com'),('descriptive','Sequoia-X/2.0 (https://github.com/GeneElias/Sequoia-X; geneelias@users.noreply.github.com)'),('current','Sequoia-X noncommercial research contact geneelias@users.noreply.github.com')]:
+            for label,agent in [('project_url','Sequoia-X research https://github.com/GeneElias/Sequoia-X'),('short_contact','Sequoia-X research geneelias@users.noreply.github.com'),('project_name','Sequoia-X research GeneElias/Sequoia-X')]:
                 try:
                     res=requests.get('https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json',headers={'User-Agent':agent},timeout=15)
                     result['network_probes'].append({'ua':label,'status':res.status_code,'content_type':res.headers.get('Content-Type')})
@@ -38,7 +38,7 @@ def main():
                 try:
                     res=requests.get('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',params={'param':f'sz300750,day,,{latest_session("A")},640,{adj}'},timeout=12)
                     payload=res.json()['data']['sz300750']
-                    result['tencent_probe'].append({'adjust':adj,'keys':list(payload),'qfq_last':payload.get('qfqday',[])[-3:],'raw_last':payload.get('day',[])[-3:]})
+                    result['tencent_probe'].append({'adjust':adj,'keys':list(payload),'qfq_last':payload.get('qfqday',[])[-3:],'raw_last':payload.get('day',[])[-3:], 'lengths':{k:len(payload.get(k,[])) for k in ['day','qfqday']}, 'first':{k:payload.get(k,[])[:1] for k in ['day','qfqday']}, 'qt':payload.get('qt',{}).get('sz300750',[])[:40]})
                 except Exception as exc:result['tencent_probe'].append({'error':type(exc).__name__})
             (root/'_state/diagnostics.json').write_text(json.dumps(result,ensure_ascii=False,default=str))
             state.save()
