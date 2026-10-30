@@ -1,0 +1,265 @@
+"""Free annual statements, independent upstream reconciliation, conservative equity model.
+
+Automatic checks are not human review. No API key, analyst target or fabricated input.
+The automatic model is deliberately limited to profitable, net-cash nonfinancial firms.
+"""
+from datetime import date, datetime, timezone
+import json
+from pathlib import Path
+
+import pandas as pd
+import requests
+
+from .valuation import number
+
+CIKS = dict(zip('MSFT AAPL NVDA GOOGL AMZN META AVGO AMD ORCL CRM ADBE NOW JPM BAC V MA BRK-B UNH JNJ LLY XOM CVX COST WMT PG'.split(),
+    '789019 320193 1045810 1652044 1018724 1326801 1730168 2488 1341439 1108524 796343 1373715 19617 70858 1403161 1141391 1067983 731766 200406 59478 34088 93410 909832 104169 80424'.split()))
+FINANCIALS = {'JPM','BAC','BRK-B','600036','601398','601318','600030','601166'}
+FIELDS = ('cfo','capex','shares','cash','debt','net_income','common_income','revenue','sbc')
+
+
+class FinancialError(ValueError):
+    """Only internally authored, credential-free reasons may be exposed."""
+
+
+def value(row, *names):
+    for name in names:
+        if name in row and row[name] is not None and not pd.isna(row[name]):
+            return float(number(row[name]))
+    raise FinancialError('财报缺少必需字段：'+names[0])
+
+
+def year_periods(frame):
+    result={}
+    for column in frame.columns:
+        stamp=pd.Timestamp(column)
+        if not pd.isna(stamp):result[str(stamp.date())]=frame[column].to_dict()
+    return result
+
+
+def yahoo_statements(symbol, market, as_of):
+    import yfinance as yf
+    ticker=symbol if market=='US' else symbol+('.SS' if symbol.startswith('6') else '.SZ')
+    t=yf.Ticker(ticker)
+    cf,inc,bal=[year_periods(x) for x in (t.cash_flow,t.income_stmt,t.balance_sheet)]
+    currency=t.fast_info.get('currency')
+    if currency != ('USD' if market=='US' else 'CNY'):
+        raise FinancialError('行情币种不一致')
+    rows=[]
+    for day in sorted(set(cf)&set(inc)&set(bal),reverse=True)[:3]:
+        c,i,b=cf[day],inc[day],bal[day]
+        # Negative CapEx in Yahoo is a cash outflow, stored below as a positive spend.
+        capex=value(c,'Capital Expenditure')
+        if capex>0:raise FinancialError('资本开支符号异常')
+        row={'date':day,'cfo':value(c,'Operating Cash Flow'),'capex':-capex,
+             'shares':value(b,'Ordinary Shares Number'),
+             'cash':value(b,'Cash And Cash Equivalents'), 'debt':value(b,'Total Debt'),
+             'net_income':value(i,'Net Income Including Noncontrolling Interests','Net Income'),
+             'common_income':value(i,'Net Income Common Stockholders','Net Income'),
+             'revenue':value(i,'Total Revenue'),
+             'sbc':value(c,'Stock Based Compensation') if market=='US' else 0.0}
+        rows.append(row)
+    if not rows:raise FinancialError('Yahoo没有可用完整年度财报')
+    # Annual share counts cannot price a post-report split without conversion.
+    events=t.history(start=rows[0]['date'],end=str(date.fromisoformat(as_of)+__import__('datetime').timedelta(days=1)),auto_adjust=False,timeout=12)
+    if events.empty or 'Stock Splits' not in events or str(events.index[-1].date())!=as_of:
+        raise FinancialError('报告期后股本事件覆盖不足')
+    if (events['Stock Splits']!=0).any():
+        raise FinancialError('年度财报后发生拆股/送转，需更新股数口径后核验')
+    return rows, {'upstream':'Yahoo Finance','url':f'https://finance.yahoo.com/quote/{ticker}/financials/'}
+
+
+def sec_fact(facts, tags, end, as_of, annual=False, optional=False):
+    for tag in tags:
+        units=facts.get(tag,{}).get('units',{})
+        entries=units.get('shares' if tag=='CommonStockSharesOutstanding' else 'USD',[])
+        eligible=[]
+        for x in entries:
+            if x.get('end')!=end or not x.get('filed') or x['filed']>as_of or x.get('form') not in {'10-K','10-K/A','10-Q','10-Q/A'}:
+                continue
+            if annual:
+                if not x.get('start') or not 350<=(date.fromisoformat(end)-date.fromisoformat(x['start'])).days<=380:continue
+            elif x.get('start'):continue
+            eligible.append(x)
+        if eligible:
+            return float(number(max(eligible,key=lambda x:x['filed'])['val']))
+    if optional:return None
+    raise FinancialError('SEC缺少同报告期字段：'+tags[0])
+
+
+def sec_statements(symbol, as_of, days, get=requests.get):
+    cik=CIKS[symbol].zfill(10)
+    url=f'https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json'
+    r=get(url,headers={'User-Agent':'Sequoia-X noncommercial research contact geneelias@users.noreply.github.com'},timeout=15)
+    r.raise_for_status();facts=r.json()['facts']['us-gaap'];rows=[]
+    for day in days:
+        f=lambda tags,annual=False,optional=False:sec_fact(facts,tags,day,as_of,annual,optional)
+        # Include lease liabilities where the issuer reports them with funded debt.
+        total_debt=f(['LongTermDebtAndFinanceLeaseObligationsIncludingCurrentMaturities'],optional=True)
+        if total_debt is None:
+            nc=f(['LongTermDebtAndFinanceLeaseObligationsNoncurrent','LongTermDebtNoncurrent'],optional=True)
+            cur=f(['LongTermDebtAndFinanceLeaseObligationsCurrent','LongTermDebtCurrent'],optional=True)
+            short=f(['ShortTermBorrowings','ShortTermDebtCurrent','CommercialPaper'],optional=True)
+            if nc is None and cur is None and short is None:
+                # A missing debt concept is not proof of zero debt.
+                raise FinancialError('SEC债务口径不完整')
+            total_debt=(nc or 0)+(cur or 0)+(short or 0)
+        rows.append({'date':day,
+            'cfo':f(['NetCashProvidedByUsedInOperatingActivities'],True),
+            'capex':f(['PaymentsToAcquirePropertyPlantAndEquipment'],True),
+            'shares':f(['CommonStockSharesOutstanding']),
+            'cash':f(['CashAndCashEquivalentsAtCarryingValue']),
+            'debt':total_debt,
+            'net_income':f(['ProfitLoss','NetIncomeLoss'],True),
+            'common_income':f(['NetIncomeLossAvailableToCommonStockholdersBasic','NetIncomeLoss'],True),
+            'revenue':f(['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet'],True),
+            'sbc':f(['ShareBasedCompensation'],True)})
+    return rows,{'upstream':'SEC','url':url}
+
+
+def sina_statements(symbol, as_of, days, get=requests.get):
+    code=('sh' if symbol.startswith('6') else 'sz')+symbol
+    url='https://quotes.sina.cn/cn/api/openapi.php/CompanyFinanceService.getFinanceReport2022'
+    sheets={}
+    for name in ('fzb','lrb','llb'):
+        response=get(url,params={'paperCode':code,'source':name,'type':'0','page':'1','num':'20'},timeout=12)
+        response.raise_for_status()
+        reports=response.json()['result']['data']['report_list'];sheet={}
+        for stamp,report in reports.items():
+            day=pd.Timestamp(stamp).date().isoformat()
+            published=str(report.get('publish_date','')).replace('-','')[:8]
+            if not published or published>as_of.replace('-','') or report.get('rCurrency')!='CNY':continue
+            # Annual full-year consolidated reports only, never annualize YTD figures.
+            if not day.endswith('12-31') or report.get('rType')!='合并期末':continue
+            sheet[day]={i['item_title']:i.get('item_value') for i in report['data']}
+        sheets[name]=sheet
+    rows=[]
+    def nullable(row,name):
+        if name not in row:raise FinancialError('新浪缺少必需科目：'+name)
+        v=row[name]
+        return 0.0 if v in (None,'','--') else float(number(v))
+    for day in days:
+        try:b,i,c=[sheets[n][day] for n in ('fzb','lrb','llb')]
+        except KeyError:raise FinancialError('新浪缺少已公告的同年度合并报表') from None
+        # Default A-share universe has RMB1 par shares. Cross-check against Yahoo
+        # actual shares; a changed par value fails reconciliation instead of guessing.
+        debt=sum(nullable(b,n) for n in ('短期借款','长期借款','应付债券','一年内到期的非流动负债','租赁负债'))
+        rows.append({'date':day,'cfo':value(c,'经营活动产生的现金流量净额'),
+            'capex':value(c,'购建固定资产、无形资产和其他长期资产所支付的现金'),
+            'shares':value(b,'实收资本(或股本)','实收资本（或股本）','股本'),
+            'cash':value(b,'货币资金'),'debt':debt,
+            'net_income':value(i,'净利润'),'common_income':value(i,'归属于母公司所有者的净利润'),
+            'revenue':value(i,'营业总收入','营业收入'),'sbc':0.0})
+    return rows,{'upstream':'Sina','url':url+'?paperCode='+code}
+
+
+def reconcile(primary, secondary):
+    if len(primary)!=3 or len(secondary)!=3:raise FinancialError('需要连续三个完整财年')
+    if [r['date'] for r in primary]!=[r['date'] for r in secondary]:raise FinancialError('两个来源报告期不一致')
+    years=[date.fromisoformat(r['date']) for r in primary]
+    if any(not 350<=(a-b).days<=380 for a,b in zip(years,years[1:])):raise FinancialError('三个财年不连续')
+    checks=[]
+    for a,b in zip(primary,secondary):
+        for name in FIELDS:
+            av,bv=number(a[name]),number(b[name])
+            # Rounding at most one reporting-currency unit, otherwise 1% maximum.
+            if abs(av-bv)>max(number(1),abs(av)*number('.01')):
+                raise FinancialError(f'双源冲突：{a["date"]} {name}差异超过1%')
+            checks.append({'date':a['date'],'field':name,'primary':float(av),'secondary':float(bv)})
+    return checks
+
+
+def owner_cash(row):
+    # Cap owner earnings by attributable profit. US SBC is deducted as a real cost.
+    cfo,capex,sbc=[number(row[k]) for k in ('cfo','capex','sbc')]
+    ni,common=number(row['net_income']),number(row['common_income'])
+    if ni<=0 or common<=0 or common>ni*number('1.01'):
+        raise FinancialError('利润为负或归母口径异常')
+    cash=(cfo-capex-sbc)*min(number(1),common/ni)
+    return min(cash,common)
+
+
+def verify_record(spec, as_of):
+    if spec.get('schema_version')!=1 or spec.get('verification_mode')!='automatic':raise FinancialError('自动核验版本无效')
+    checked=date.fromisoformat(spec['checked_at']);cutoff=date.fromisoformat(as_of)
+    if not 0<=(cutoff-checked).days<=7:raise FinancialError('自动财报核验超过7天或来自未来')
+    p,s=spec['primary'],spec['secondary'];reconcile(p,s)
+    names={x['upstream'] for x in spec['sources']}
+    expected={'Yahoo Finance','SEC'} if spec['market']=='US' else {'Yahoo Finance','Sina'}
+    if names!=expected:raise FinancialError('自动财报需要两个指定独立上游')
+    latest=date.fromisoformat(p[0]['date'])
+    if not 0<=(cutoff-latest).days<=450:raise FinancialError('年度财报超过450天或来自未来')
+    earnings=[]
+    for row in p:
+        if any(number(row[k])<0 for k in ('capex','cash','debt','sbc')) or number(row['shares'])<=0 or number(row['revenue'])<=0:
+            raise FinancialError('财报数值或单位异常')
+        e=owner_cash(row)
+        if e<=0:raise FinancialError('三年中存在负股东现金流，自动模型不适用')
+        earnings.append(float(e))
+    if number(p[0]['cash'])<number(p[0]['debt']):
+        raise FinancialError('有净负债：需人工FCFF或行业模型，不能套用自动净现金模型')
+    if number(p[0]['shares'])/number(p[-1]['shares'])>number('1.10'):
+        raise FinancialError('两年股数增加超过10%，需核查摊薄')
+    return earnings
+
+
+def automatic_assessment(price,currency,spec,as_of):
+    from .valuation import dcf
+    pending={'status':'待核验','verification_mode':'automatic'}
+    if spec.get('blocked_reason'):return {**pending,'reason':spec['blocked_reason']}
+    try:
+        if currency!=('USD' if spec['market']=='US' else 'CNY'):raise FinancialError('估值币种不一致')
+        earnings=verify_record(spec,as_of)
+        primary=spec['primary'];latest=primary[0]
+        # Lowest of latest, three-year mean and attributable profit; no cash add-back.
+        base_cash=min(earnings[0],sum(earnings)/3)
+        growth=min(.05,(earnings[0]/earnings[-1])**.5-1,
+                   (latest['revenue']/primary[-1]['revenue'])**.5-1,
+                   (latest['common_income']/primary[-1]['common_income'])**.5-1)
+        if growth<-.20:raise FinancialError('盈利/现金流快速下降，自动DCF不适用')
+        model={'fcff':base_cash,'shares':max(r['shares'] for r in primary),'net_debt':0,
+               'discount_rate':'.12','terminal_growth':'.02','years':5}
+        growths={'bear':min(0,growth-.05),'base':growth,'bull':min(.10,growth+.05)}
+        values={k:float(dcf(model,number(g))) for k,g in growths.items()}
+        margin=1-float(number(price))/values['base']
+        sensitivity={str(d):float(dcf(model,number(growth),number('.12')+d)) for d in (number('0'),number('.02'))}
+        return {'status':'有安全边际' if margin>=.30 else '等待价格','verification_mode':'automatic',
+            'method':'owner_cashflow_dcf','values':values,'margin':margin,'required_margin':.30,
+            'watch_price':values['base']*.7,'reverse_growth':None,'rate_sensitivity':sensitivity,
+            'financial_as_of':latest['date'],'reviewed_at':spec['checked_at'],'sources':spec['sources'],
+            'growth':growths,'cashflow_base':base_cash,'discrepancies':[],
+            'reason':'双源数值核对通过；三年正现金流、正利润及年度净现金筛选通过。未自动判断护城河或管理层质量。',
+            'assumptions_reason':'净现金企业股东现金流代理：min(经营现金流−资本开支−美股股权激励，经归母占比折算,归母利润)；基数取最新与三年均值较低者，增长取现金流/收入/利润两年复合增速最低且≤5%；折现12%、永续2%、安全边际30%。不加回现金、不重复扣净债务。A股股权激励无独立调整。',
+            'review_note':'自动财报数值与规则核验，未经人工审阅；银行、保险、券商及净负债企业仍需专用人工模型。'}
+    except FinancialError as exc:return {**pending,'reason':str(exc)}
+    except (KeyError,ValueError,TypeError,ArithmeticError):return {**pending,'reason':'自动财报记录不完整或模型验证失败'}
+
+
+class Fundamentals:
+    def __init__(self, path:Path):
+        self.path=path
+        self.records=json.loads(path.read_text()) if path.exists() else {}
+
+    def refresh(self,market,symbols,as_of,force=False):
+        for symbol in symbols:
+            key=f'{market}:{symbol}';old=self.records.get(key,{})
+            age=(date.fromisoformat(as_of)-date.fromisoformat(old.get('checked_at','2000-01-01'))).days
+            if not force and 0<=age<=(0 if old.get('blocked_reason') else 7):continue
+            spec={'schema_version':1,'verification_mode':'automatic','market':market,'checked_at':as_of,
+                  'retrieved_at':datetime.now(timezone.utc).isoformat()}
+            try:
+                if symbol in FINANCIALS:raise FinancialError('金融企业需银行/保险/券商专用模型，暂停自动估值')
+                rows,source=yahoo_statements(symbol,market,as_of)
+                rows=[r for r in rows if r['date']<=as_of][:3]
+                if len(rows)<3:raise FinancialError('Yahoo不足三个完整年度财报')
+                days=[r['date'] for r in rows]
+                other,source2=(sec_statements(symbol,as_of,days) if market=='US' else sina_statements(symbol,as_of,days))
+                spec.update(primary=rows,secondary=other,sources=[source,source2])
+                spec['input_checks']=reconcile(rows,other)
+                verify_record(spec,as_of)
+            except FinancialError as exc:spec['blocked_reason']=str(exc)
+            except Exception as exc:spec['blocked_reason']=f'财报获取失败（{type(exc).__name__}），未以空值补零'
+            self.records[key]=spec
+        self.path.parent.mkdir(parents=True,exist_ok=True)
+        temp=self.path.with_suffix('.tmp');temp.write_text(json.dumps(self.records,ensure_ascii=False,allow_nan=False));temp.replace(self.path)
+        return {f'{market}:{s}':self.records[f'{market}:{s}'] for s in symbols}

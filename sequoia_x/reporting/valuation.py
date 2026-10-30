@@ -40,6 +40,9 @@ def assess(price: float, currency: str, spec: dict | None, as_of: str) -> dict:
     pending = {"status": "待核验", "reason": "未提供已复核财报与估值假设，不生成目标价"}
     if not spec:
         return pending
+    if spec.get('verification_mode') == 'automatic':
+        from .fundamentals import automatic_assessment
+        return automatic_assessment(price, currency, spec, as_of)
     try:
         if spec.get("reviewed") is not True:
             return {**pending, "reason": "估值材料未标记为人工复核完成"}

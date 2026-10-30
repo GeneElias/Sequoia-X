@@ -6,7 +6,7 @@ import json
 
 import pandas as pd
 
-from .market import MarketData, latest_session
+from .market import MarketData, MarketDataError, latest_session
 from .valuation import assess
 
 
@@ -87,7 +87,7 @@ def build_report(universe: dict, provider: MarketData, valuations: dict,
                 group["items"].append(item)
             except Exception as exc:
                 # No vendor exception text: it could include a credential-bearing URL.
-                group["errors"].append({"symbol": symbol, "reason": f"日线获取或验证失败（{type(exc).__name__}）"})
+                group["errors"].append({"symbol": symbol, "reason": str(exc) if isinstance(exc, MarketDataError) else f"日线获取或验证失败（{type(exc).__name__}）"})
         items = group["items"]
         group["complete"] = len(items) == len(symbols) and len(items) >= 2
         if group["complete"]:
@@ -138,9 +138,11 @@ def item_markdown(item: dict) -> str:
         values = v["values"]
         lines += [f"估值：悲观 {values['bear']:.2f}／基准 {values['base']:.2f}／乐观 {values['bull']:.2f} {item['currency']}（现值）",
                   f"基准安全边际：{pct(v['margin'])}｜假设阈值：{pct(v['required_margin'])}",
-                  f"模型观察价 ≤ {v['watch_price']:.2f}｜市场隐含FCFF增长：{pct(v['reverse_growth'])}",
-                  f"财报：{v['financial_as_of']}｜输入复核：{v['reviewed_at']}（用户标记）",
+                  f"模型观察价 ≤ {v['watch_price']:.2f}｜市场隐含现金流增长：{pct(v['reverse_growth'])}",
+                  f"财报：{v['financial_as_of']}｜输入核验：{v['reviewed_at']}（{'自动双源核验，非人工审阅' if v.get('verification_mode') == 'automatic' else '用户标记人工复核'}）",
                   f"质量审查：{v['reason']}"]
+        if v.get("verification_mode") == "automatic":
+            lines.append("模型：" + v["assumptions_reason"])
     else:
         lines.append(f"估值：**{v['status']}**，{v['reason']}")
     lines += ["风险：突破失败、现金流不及假设或估值上修依据消失；悲观情景不是最大损失。",

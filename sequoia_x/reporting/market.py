@@ -15,6 +15,17 @@ import pandas as pd
 import requests
 
 
+class MarketDataError(ValueError):
+    """Safe adapter/stage diagnostics, never raw provider exceptions."""
+
+
+VALIDATION_REASONS = {
+    '缺少 OHLCV 列','重复交易日','没有完整日线','日线有缺失或非有限值','价格必须为正',
+    '无效高价或成交量','无效低价','缺少未复权收盘价','缺少有效的未复权收盘价',
+    '不足121根日线或数据并非最新完整交易日','最近121个交易日不连续（停牌或日线缺失），不参与RPS',
+}
+
+
 @dataclass
 class History:
     symbol: str
@@ -105,7 +116,7 @@ class MarketData:
             validate_window(frame, market, as_of)
             return History(symbol, market, frame, **obj)
         attempts = []
-        adapters = [self._yahoo, self._sina] if market == "US" else [self._akshare, self._yahoo]
+        adapters = [self._yahoo, self._sina] if market == "US" else [self._akshare, self._tencent, self._yahoo]
         for adapter in adapters:
             try:
                 h = adapter(symbol, market, as_of)
@@ -115,14 +126,15 @@ class MarketData:
                 h.warnings = attempts + h.warnings
                 obj = dict(source=h.source, upstream=h.upstream, adjustment=h.adjustment,
                            currency=h.currency, warnings=h.warnings,
-                           rows=h.frame.reset_index().to_dict(orient="records"))
+                           rows=json.loads(h.frame.reset_index().to_json(orient="records")))
                 if h.adjustment == "consistent":
                     path.write_text(json.dumps(obj, ensure_ascii=False, allow_nan=False))
                 return h
             except Exception as exc:
                 # URLs may contain tokens: store only adapter name and exception type.
-                attempts.append(f"{adapter.__name__[1:]}: {type(exc).__name__}")
-        raise ValueError("取数失败：" + "; ".join(attempts))
+                reason = str(exc) if isinstance(exc, ValueError) and str(exc) in VALIDATION_REASONS else type(exc).__name__
+                attempts.append(f"{adapter.__name__[1:]}: {reason}")
+        raise MarketDataError("取数失败：" + "; ".join(attempts))
 
     @staticmethod
     def _yahoo(symbol: str, market: str, as_of: str) -> History:
@@ -141,7 +153,8 @@ class MarketData:
         out["raw_high"] = df["High"]
         out["raw_low"] = df["Low"]
         out["dividends"] = df.get("Dividends", 0.0)
-        out["stock_splits"] = df.get("Stock Splits", 0.0)
+        if "Stock Splits" in df:
+            out["stock_splits"] = df["Stock Splits"]
         return History(symbol, market, out, "yfinance", "Yahoo Finance", "consistent",
                        "USD" if market == "US" else "CNY",
                        ["成交量为供应商报告值；复权口径见完整报告"])
@@ -152,12 +165,27 @@ class MarketData:
         h = self.history(symbol, market, as_of)
         if h.upstream == "Yahoo Finance" and required <= set(h.frame.columns):
             return h
-        h = self._yahoo(symbol, market, as_of)
-        h.frame = normalize(h.frame, as_of)
-        validate_window(h.frame, market, as_of)
-        if not required <= set(h.frame.columns):
+        events = self._yahoo(symbol, market, as_of)
+        if market == 'A' and {'raw_open','raw_high','raw_low'} <= set(h.frame.columns):
+            # Raw OHLC can come from Eastmoney/Tencent; Yahoo supplies dated split
+            # events even when an OHLC field in its own latest bar is malformed.
+            event_frame = events.frame.copy()
+            event_frame.index = pd.to_datetime(event_frame.index).strftime('%Y-%m-%d')
+            event_frame = event_frame.loc[event_frame.index <= as_of]
+            if event_frame.empty or event_frame.index[-1] != as_of or 'stock_splits' not in event_frame:
+                raise ValueError('拆股事件覆盖不足')
+            aligned = event_frame.reindex(h.frame.index)
+            if aligned.stock_splits.isna().any() or aligned.raw_close.isna().any():
+                raise ValueError('拆股事件存在缺口')
+            if ((aligned.raw_close / h.frame.raw_close - 1).abs() > .01).any():
+                raise ValueError('两源原始收盘价差异超过1%，暂停模拟成交')
+            h.frame['stock_splits'] = aligned.stock_splits
+            return h
+        events.frame = normalize(events.frame, as_of)
+        validate_window(events.frame, market, as_of)
+        if not required <= set(events.frame.columns):
             raise ValueError("模拟成交缺少原始价格或拆股事件")
-        return h
+        return events
 
     @staticmethod
     def _akshare(symbol: str, market: str, as_of: str) -> History:
@@ -166,17 +194,47 @@ class MarketData:
         start = (pd.Timestamp(as_of) - pd.Timedelta(days=650)).strftime("%Y%m%d")
         end = as_of.replace("-", "")
         # Fetch raw and adjusted explicitly; adjustment must not contaminate turnover.
-        adjusted = ak.stock_zh_a_hist(symbol=symbol, start_date=start, end_date=end, adjust="qfq")
-        raw = ak.stock_zh_a_hist(symbol=symbol, start_date=start, end_date=end, adjust="")
+        adjusted = ak.stock_zh_a_hist(symbol=symbol, start_date=start, end_date=end, adjust="qfq", timeout=8)
+        raw = ak.stock_zh_a_hist(symbol=symbol, start_date=start, end_date=end, adjust="", timeout=8)
         mapping = {"日期": "date", "开盘": "open", "最高": "high", "最低": "low",
                    "收盘": "close", "成交量": "volume", "成交额": "amount"}
         frame = adjusted.rename(columns=mapping).set_index("date")
         original = raw.rename(columns=mapping).set_index("date")
-        frame["raw_close"] = original["close"]
+        for column in ('open','high','low','close'):
+            frame['raw_'+column] = original[column]
         frame["amount"] = original["amount"]
         frame["volume"] = original["volume"] * 100  # Eastmoney: lots -> shares.
-        return History(symbol, market, frame[["open", "high", "low", "close", "volume", "raw_close", "amount"]],
+        return History(symbol, market, frame[["open", "high", "low", "close", "volume", "raw_open", "raw_high", "raw_low", "raw_close", "amount"]],
                        "AKShare", "Eastmoney", "consistent", "CNY")
+
+    @staticmethod
+    def _tencent(symbol: str, market: str, as_of: str) -> History:
+        code = ('sh' if symbol.startswith('6') else 'sz') + symbol
+        url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get'
+        frames, payloads = {}, {}
+        for adjust in ('qfq', ''):
+            response = requests.get(url, params={'param':f'{code},day,,{as_of},640,{adjust}'}, timeout=12)
+            response.raise_for_status()
+            payload = response.json()['data'][code]
+            key = 'qfqday' if adjust else 'day'
+            rows = payload.get(key)
+            # Never claim an unadjusted fallback is consistently adjusted.
+            if not rows:raise ValueError('腾讯缺少显式复权或原始日线')
+            frame = pd.DataFrame([r[:6] for r in rows], columns=['date','open','close','high','low','volume']).set_index('date')
+            frame = frame.apply(pd.to_numeric, errors='raise')
+            frames[adjust], payloads[adjust] = frame, payload
+        frame, raw = frames['qfq'], frames['']
+        if not frame.index.equals(raw.index):raise ValueError('腾讯复权与原始交易日不一致')
+        for col in ('open','high','low','close'):frame['raw_'+col] = raw[col]
+        frame['volume'] = raw['volume'] * 100  # Tencent K-line volume is lots.
+        quote = payloads[''].get('qt', {}).get(code, [])
+        if len(quote) > 37 and str(quote[30])[:8] == as_of.replace('-',''):
+            # Quote turnover is reported in RMB10,000; never approximate it by close*volume.
+            if abs(float(quote[3]) / float(raw.loc[as_of,'close']) - 1) <= .001 and abs(float(quote[6]) - float(raw.loc[as_of,'volume'])) <= 1:
+                frame['amount'] = float('nan')
+                frame.loc[as_of,'amount'] = float(quote[37]) * 10000
+        return History(symbol, market, frame, 'Tencent K-line', 'Tencent', 'consistent', 'CNY',
+                       ['腾讯前复权与原始日线分别读取；历史成交额缺失时不生成海龟成交额确认'])
 
     @staticmethod
     def _sina(symbol: str, market: str, as_of: str) -> History:

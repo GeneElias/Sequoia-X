@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import time
+import sys
 
 import requests
 
@@ -25,6 +26,17 @@ def main():
         return original(self, method, url, **kw)
     requests.sessions.Session.request = bounded
     with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        if '--full' in sys.argv:
+            from .fundamentals import Fundamentals
+            from .report import DEFAULT_UNIVERSE, build_report
+            result['repair_preview'] = []
+            for market in ('A','US'):
+                valuations = Fundamentals(root/'_state/fundamentals.json').refresh(market,DEFAULT_UNIVERSE[market],latest_session(market),force=True)
+                report = build_report({market:DEFAULT_UNIVERSE[market]},provider,valuations)
+                result['repair_preview'].append(report)
+            (root/'_state/diagnostics.json').write_text(json.dumps(result,ensure_ascii=False,default=str))
+            state.save()
+            return
         for symbol in ['600519', '000858', '300750']:
             for method in ['_akshare', '_yahoo']:
                 row = {'symbol': symbol, 'adapter': method}; start=time.monotonic()
@@ -68,7 +80,7 @@ def main():
             result['sec_status']=sec.status_code
             if sec.ok:
                 facts=sec.json()['facts']['us-gaap']
-                result['sec_tags']={k:v for k,v in facts.items() if any(term in k.lower() for term in ['netcashprovidedbyusedinoperat','paymentstoacquireproperty','commonstocksharesoutstanding','longtermdebt','shortterm','commercialpaper','financelease','interestexpense','sharebasedcompensation','cashcashequivalents'])}
+                result['sec_tags']={k:{'units':{unit:values[-12:] for unit,values in v.get('units',{}).items()}} for k,v in facts.items() if any(term in k.lower() for term in ['netcashprovidedbyusedinoperat','paymentstoacquireproperty','commonstocksharesoutstanding','longtermdebt','shortterm','commercialpaper','financelease','interestexpense','sharebasedcompensation','cashcashequivalents'])}
         except Exception as exc:result['sec_error']=type(exc).__name__
         headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'}
         base='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']
