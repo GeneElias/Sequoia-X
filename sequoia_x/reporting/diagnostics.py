@@ -26,6 +26,23 @@ def main():
         return original(self, method, url, **kw)
     requests.sessions.Session.request = bounded
     with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+        if '--probe' in sys.argv:
+            result['network_probes'] = []
+            for label,agent in [('original','Sequoia-X research admin@geneelias.com'),('descriptive','Sequoia-X/2.0 (https://github.com/GeneElias/Sequoia-X; geneelias@users.noreply.github.com)'),('current','Sequoia-X noncommercial research contact geneelias@users.noreply.github.com')]:
+                try:
+                    res=requests.get('https://data.sec.gov/api/xbrl/companyfacts/CIK0000789019.json',headers={'User-Agent':agent},timeout=15)
+                    result['network_probes'].append({'ua':label,'status':res.status_code,'content_type':res.headers.get('Content-Type')})
+                except Exception as exc:result['network_probes'].append({'ua':label,'error':type(exc).__name__})
+            result['tencent_probe'] = []
+            for adj in ('qfq',''):
+                try:
+                    res=requests.get('https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',params={'param':f'sz300750,day,,{latest_session("A")},640,{adj}'},timeout=12)
+                    payload=res.json()['data']['sz300750']
+                    result['tencent_probe'].append({'adjust':adj,'keys':list(payload),'qfq_last':payload.get('qfqday',[])[-3:],'raw_last':payload.get('day',[])[-3:]})
+                except Exception as exc:result['tencent_probe'].append({'error':type(exc).__name__})
+            (root/'_state/diagnostics.json').write_text(json.dumps(result,ensure_ascii=False,default=str))
+            state.save()
+            return
         if '--full' in sys.argv:
             from .fundamentals import Fundamentals
             from .report import DEFAULT_UNIVERSE, build_report

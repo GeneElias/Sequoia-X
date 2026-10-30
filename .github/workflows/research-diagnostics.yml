@@ -24,7 +24,7 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --extra reports --extra github --extra dev --python 3.12
       - run: .venv/bin/python -m sequoia_x.reporting.github_runner --task selftest
-      - run: .venv/bin/python -m sequoia_x.reporting.diagnostics --full
+      - run: .venv/bin/python -m sequoia_x.reporting.diagnostics --probe
         env:
           SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
           GH_TOKEN: ${{ github.token }}
