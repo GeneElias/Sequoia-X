@@ -132,7 +132,7 @@ class MarketData:
                 return h
             except Exception as exc:
                 # URLs may contain tokens: store only adapter name and exception type.
-                reason = str(exc) if isinstance(exc, ValueError) and str(exc) in VALIDATION_REASONS else type(exc).__name__
+                reason = str(exc) if isinstance(exc, MarketDataError) or (isinstance(exc, ValueError) and str(exc) in VALIDATION_REASONS) else type(exc).__name__
                 attempts.append(f"{adapter.__name__[1:]}: {reason}")
         raise MarketDataError("取数失败：" + "; ".join(attempts))
 
@@ -219,20 +219,28 @@ class MarketData:
             key = 'qfqday' if adjust else 'day'
             rows = payload.get(key)
             # Never claim an unadjusted fallback is consistently adjusted.
-            if not rows:raise ValueError('腾讯缺少显式复权或原始日线')
+            if not rows:raise MarketDataError('腾讯缺少显式复权或原始日线')
             frame = pd.DataFrame([r[:6] for r in rows], columns=['date','open','close','high','low','volume']).set_index('date')
             frame = frame.apply(pd.to_numeric, errors='raise')
             frames[adjust], payloads[adjust] = frame, payload
         frame, raw = frames['qfq'], frames['']
-        if not frame.index.equals(raw.index):raise ValueError('腾讯复权与原始交易日不一致')
+        if frame.index.duplicated().any() or raw.index.duplicated().any():
+            raise MarketDataError('腾讯交易日重复')
+        common=frame.index.intersection(raw.index)
+        frame,raw=frame.loc[common].copy(),raw.loc[common].copy()
+        # No forward-filling: the common dates must still pass the full 121-session check.
+        if frame.empty:raise MarketDataError('腾讯两份日线无共有交易日')
         for col in ('open','high','low','close'):frame['raw_'+col] = raw[col]
         frame['volume'] = raw['volume'] * 100  # Tencent K-line volume is lots.
         quote = payloads[''].get('qt', {}).get(code, [])
-        if len(quote) > 37 and str(quote[30])[:8] == as_of.replace('-',''):
-            # Quote turnover is reported in RMB10,000; never approximate it by close*volume.
-            if abs(float(quote[3]) / float(raw.loc[as_of,'close']) - 1) <= .001 and abs(float(quote[6]) - float(raw.loc[as_of,'volume'])) <= 1:
-                frame['amount'] = float('nan')
-                frame.loc[as_of,'amount'] = float(quote[37]) * 10000
+        try:
+            if len(quote) > 37 and as_of in raw.index and str(quote[30])[:8] == as_of.replace('-',''):
+                # Turnover is reported RMB10,000, not raw close multiplied by volume.
+                if abs(float(quote[3]) / float(raw.loc[as_of,'close']) - 1) <= .001 and abs(float(quote[6]) - float(raw.loc[as_of,'volume'])) <= 1:
+                    frame['amount'] = float('nan')
+                    frame.loc[as_of,'amount'] = float(quote[37]) * 10000
+        except (TypeError,ValueError):
+            pass  # Incomplete quote metadata cannot invalidate verified historical bars.
         return History(symbol, market, frame, 'Tencent K-line', 'Tencent', 'consistent', 'CNY',
                        ['腾讯前复权与原始日线分别读取；历史成交额缺失时不生成海龟成交额确认'])
 

@@ -14,6 +14,7 @@ def automatic(market='US'):
     primary=[{'date':f'{year}-12-31','cfo':1300.,'capex':200.,'shares':100.,'cash':2000.,
               'debt':100.,'net_income':1200.,'common_income':1100.,'revenue':5000.,'sbc':100. if market=='US' else 0.}
              for year in (2025,2024,2023)]
+    primary[0]['capital_actions_through']='2026-10-30'
     return {'schema_version':1,'verification_mode':'automatic','market':market,'checked_at':'2026-10-29',
             'primary':primary,'secondary':deepcopy(primary),
             'sources':[{'upstream':'Yahoo Finance','url':'https://finance.yahoo.com/quote/test/'},

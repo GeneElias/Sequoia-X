@@ -3,7 +3,8 @@
 Automatic checks are not human review. No API key, analyst target or fabricated input.
 The automatic model is deliberately limited to profitable, net-cash nonfinancial firms.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlparse
 import json
 from pathlib import Path
 
@@ -61,11 +62,12 @@ def yahoo_statements(symbol, market, as_of):
         rows.append(row)
     if not rows:raise FinancialError('Yahoo没有可用完整年度财报')
     # Annual share counts cannot price a post-report split without conversion.
-    events=t.history(start=rows[0]['date'],end=str(date.fromisoformat(as_of)+__import__('datetime').timedelta(days=1)),auto_adjust=False,timeout=12)
+    events=t.history(start=rows[0]['date'],end=str(date.fromisoformat(as_of)+timedelta(days=1)),auto_adjust=False,timeout=12)
     if events.empty or 'Stock Splits' not in events or str(events.index[-1].date())!=as_of:
         raise FinancialError('报告期后股本事件覆盖不足')
     if (events['Stock Splits']!=0).any():
         raise FinancialError('年度财报后发生拆股/送转，需更新股数口径后核验')
+    rows[0]['capital_actions_through']=as_of
     return rows, {'upstream':'Yahoo Finance','url':f'https://finance.yahoo.com/quote/{ticker}/financials/'}
 
 
@@ -90,8 +92,9 @@ def sec_fact(facts, tags, end, as_of, annual=False, optional=False):
 def sec_statements(symbol, as_of, days, get=requests.get):
     cik=CIKS[symbol].zfill(10)
     url=f'https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json'
-    r=get(url,headers={'User-Agent':'Sequoia-X noncommercial research contact geneelias@users.noreply.github.com'},timeout=15)
-    r.raise_for_status();facts=r.json()['facts']['us-gaap'];rows=[]
+    r=get(url,headers={'User-Agent':'Sequoia-X research GeneElias/Sequoia-X'},timeout=15)
+    if not r.ok:raise FinancialError(f'SEC财报接口HTTP {r.status_code}，未跳过独立核验')
+    facts=r.json()['facts']['us-gaap'];rows=[]
     for day in days:
         f=lambda tags,annual=False,optional=False:sec_fact(facts,tags,day,as_of,annual,optional)
         # Include lease liabilities where the issuer reports them with funded debt.
@@ -184,9 +187,13 @@ def verify_record(spec, as_of):
     checked=date.fromisoformat(spec['checked_at']);cutoff=date.fromisoformat(as_of)
     if not 0<=(cutoff-checked).days<=7:raise FinancialError('自动财报核验超过7天或来自未来')
     p,s=spec['primary'],spec['secondary'];reconcile(p,s)
+    if p[0].get('capital_actions_through')!=as_of:raise FinancialError('需核查年度财报后至当前交易日的股本事件')
     names={x['upstream'] for x in spec['sources']}
     expected={'Yahoo Finance','SEC'} if spec['market']=='US' else {'Yahoo Finance','Sina'}
     if names!=expected:raise FinancialError('自动财报需要两个指定独立上游')
+    hosts={'Yahoo Finance':'finance.yahoo.com','SEC':'data.sec.gov','Sina':'quotes.sina.cn'}
+    if any(urlparse(source['url']).hostname!=hosts[source['upstream']] for source in spec['sources']):
+        raise FinancialError('财报来源网址与实际上游不一致')
     latest=date.fromisoformat(p[0]['date'])
     if not 0<=(cutoff-latest).days<=450:raise FinancialError('年度财报超过450天或来自未来')
     earnings=[]
@@ -209,6 +216,7 @@ def automatic_assessment(price,currency,spec,as_of):
     if spec.get('blocked_reason'):return {**pending,'reason':spec['blocked_reason']}
     try:
         if currency!=('USD' if spec['market']=='US' else 'CNY'):raise FinancialError('估值币种不一致')
+        if number(price)<=0:raise FinancialError('估值价格必须为正')
         earnings=verify_record(spec,as_of)
         primary=spec['primary'];latest=primary[0]
         # Lowest of latest, three-year mean and attributable profit; no cash add-back.
@@ -222,10 +230,17 @@ def automatic_assessment(price,currency,spec,as_of):
         growths={'bear':min(0,growth-.05),'base':growth,'bull':min(.10,growth+.05)}
         values={k:float(dcf(model,number(g))) for k,g in growths.items()}
         margin=1-float(number(price))/values['base']
+        lo,hi=number('-.5'),number('.5');reverse=None
+        if dcf(model,lo)<=number(price)<=dcf(model,hi):
+            for _ in range(70):
+                mid=(lo+hi)/2
+                if dcf(model,mid)<number(price):lo=mid
+                else:hi=mid
+            reverse=float((lo+hi)/2)
         sensitivity={str(d):float(dcf(model,number(growth),number('.12')+d)) for d in (number('0'),number('.02'))}
         return {'status':'有安全边际' if margin>=.30 else '等待价格','verification_mode':'automatic',
             'method':'owner_cashflow_dcf','values':values,'margin':margin,'required_margin':.30,
-            'watch_price':values['base']*.7,'reverse_growth':None,'rate_sensitivity':sensitivity,
+            'watch_price':values['base']*.7,'reverse_growth':reverse,'rate_sensitivity':sensitivity,
             'financial_as_of':latest['date'],'reviewed_at':spec['checked_at'],'sources':spec['sources'],
             'growth':growths,'cashflow_base':base_cash,'discrepancies':[],
             'reason':'双源数值核对通过；三年正现金流、正利润及年度净现金筛选通过。未自动判断护城河或管理层质量。',
@@ -244,7 +259,7 @@ class Fundamentals:
         for symbol in symbols:
             key=f'{market}:{symbol}';old=self.records.get(key,{})
             age=(date.fromisoformat(as_of)-date.fromisoformat(old.get('checked_at','2000-01-01'))).days
-            if not force and 0<=age<=(0 if old.get('blocked_reason') else 7):continue
+            if not force and age==0 and (old.get('blocked_reason') or old.get('primary',[{}])[0].get('capital_actions_through')==as_of):continue
             spec={'schema_version':1,'verification_mode':'automatic','market':market,'checked_at':as_of,
                   'retrieved_at':datetime.now(timezone.utc).isoformat()}
             try:
