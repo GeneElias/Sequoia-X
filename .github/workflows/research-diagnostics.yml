@@ -38,3 +38,5 @@ jobs:
 # Capture normalized SEC concept evidence on reconciliation failures.
 
 # Verify full-year contexts for 52/53-week SEC fiscal calendars.
+
+# Reconcile funded principal separately from conservative lease buffers.
