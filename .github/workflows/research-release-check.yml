@@ -1,0 +1,45 @@
+name: Verify research deployment and recover due tasks
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: [.github/workflows/research-release-check.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: sequoia-paper-state
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra reports --extra github --extra dev --python 3.12
+      - name: Offline regression checks
+        run: .venv/bin/python -m sequoia_x.reporting.github_runner --task selftest
+      - name: Read-only live data and financial reconciliation
+        run: .venv/bin/python -m sequoia_x.reporting.diagnostics --full
+        env:
+          SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+      - name: Verify encrypted ledger integrity
+        run: .venv/bin/python -m sequoia_x.reporting.github_runner --task validate
+        env:
+          SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
+          SEQUOIA_SCHEDULE_PAUSED: ${{ vars.SEQUOIA_ENABLED == 'false' }}
+      - name: Adopt sent receipts and recover only unfinished due tasks
+        if: vars.SEQUOIA_ENABLED != 'false'
+        run: .venv/bin/python -m sequoia_x.reporting.github_runner --task due
+        env:
+          SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
+          FEISHU_REPORT_WEBHOOK_URL: ${{ secrets.FEISHU_REPORT_WEBHOOK_URL }}
+          FEISHU_REPORT_SECRET: ${{ secrets.FEISHU_REPORT_SECRET }}
+          FEISHU_DASHBOARD_URL: ${{ vars.FEISHU_DASHBOARD_URL || 'https://geneelias.github.io/Sequoia-X/' }}

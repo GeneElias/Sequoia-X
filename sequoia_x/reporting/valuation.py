@@ -1,6 +1,7 @@
 """Reproducible valuation; never create financial inputs or growth forecasts.
 
-Reviewed assumptions must be supplied explicitly. This is inspired by AI Berkshire's
+Manual FCFF assumptions must be supplied explicitly. Automatic reconciled owner-
+cashflow inputs use a separate model and never claim human review. Inspired by AI Berkshire's
 financial-data / investment-research methods, not execution of its presets or reports.
 """
 

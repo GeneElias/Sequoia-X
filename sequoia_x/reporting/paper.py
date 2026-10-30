@@ -79,6 +79,12 @@ class PaperBook:
                     raise ValueError("过期或未来信号不能追溯建仓")
                 if not group["complete"]:
                     continue
+                import exchange_calendars as xcals
+                execution_day = next_session(market, day)
+                calendar = xcals.get_calendar('XNYS' if market == 'US' else 'XSHG', start=day, end=execution_day)
+                if pd.Timestamp(now) >= calendar.session_open(pd.Timestamp(execution_day)):
+                    group['execution_blocked_reason'] = '任务已晚于下一交易日开盘，未追溯登记买单'
+                    continue
                 already = c.execute("SELECT COUNT(*) FROM orders WHERE market=? AND signal_date=?",
                                     (market, day)).fetchone()[0]
                 for item in group["shown"]:
@@ -153,8 +159,12 @@ class PaperBook:
                     continue
                 prev = h.frame.iloc[-2]
                 # Conservative A-share filter: rising one-price session is not assumed fillable.
+                previous_close = number(prev['raw_close'])
+                split_today = number(row['stock_splits'])
+                if split_today > 0:
+                    previous_close /= split_today
                 locked_up = (market == "A" and row["raw_open"] == row["raw_high"] == row["raw_low"] == row["raw_close"]
-                             and row["raw_close"] > prev["raw_close"])
+                             and number(row["raw_close"]) > previous_close)
                 if locked_up:
                     c.execute("UPDATE orders SET state='unfilled',reason='一字上涨日，保守假设无法买入' WHERE market=? AND symbol=? AND signal_date=?", key)
                     continue

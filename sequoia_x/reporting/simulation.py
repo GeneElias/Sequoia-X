@@ -20,6 +20,7 @@ from dotenv import load_dotenv, dotenv_values
 from .delivery import send_cards, validate_webhook, with_dashboard
 from .dashboard import export_dashboard
 from .market import MarketData, latest_session
+from .fundamentals import Fundamentals
 from .paper import PaperBook, weekly_cards, weekly_markdown
 from .report import DEFAULT_UNIVERSE, build_report, render_cards, render_markdown
 
@@ -63,6 +64,7 @@ class Simulation:
             checkpoint=self.checkpoint)}
 
     def daily(self, market: str = "both", now: datetime | None = None) -> dict:
+        live_clock = now is None
         now = now or datetime.now(timezone.utc)
         valuations = (json.loads(self.valuations_path.read_text())
                       if self.valuations_path and self.valuations_path.exists() else {})
@@ -70,9 +72,11 @@ class Simulation:
         output = []
         for code in markets:
             as_of = latest_session(code, now)
+            automatic = Fundamentals(self.root / '_state/fundamentals.json').refresh(code, DEFAULT_UNIVERSE[code], as_of)
+            inputs = {**automatic, **valuations}  # Explicit manual inputs take precedence.
             summary = self.book.settle(code, as_of, self.provider)
-            report = build_report({code: DEFAULT_UNIVERSE[code]}, self.provider, valuations, now=now)
-            summary["new_orders"] = self.book.register(report, now=now)
+            report = build_report({code: DEFAULT_UNIVERSE[code]}, self.provider, inputs, now=now)
+            summary["new_orders"] = self.book.register(report, now=datetime.now(timezone.utc) if live_clock else now)
             cards = render_cards(report)
             with self.book.connect() as conn:
                 signals = conn.execute("SELECT symbol,execution_date,state FROM orders WHERE market=? AND signal_date=? ORDER BY symbol",
@@ -81,6 +85,8 @@ class Simulation:
                     f"累计订单状态：{json.dumps(summary['orders'], ensure_ascii=False)}（新增信号另见账本）\n"
                     f"累计虚拟投入 {summary['contributed']} {'CNY' if code=='A' else 'USD'}；"
                     f"滑点{self.book.slippage*10000}bp、手续费{self.book.fee}/笔；价格收益不含股息税费；同日信号去重，持有不卖。")
+            if report['markets'][0].get('execution_blocked_reason'):
+                note += '\n' + report['markets'][0]['execution_blocked_reason']
             if signals:
                 note += "\n" + "；".join(f"{r['symbol']} 100股，预计{r['execution_date']}（{r['state']}）" for r in signals)
             cards[-1]["card"]["elements"].append({"tag": "div", "text": {"tag": "lark_md", "content": note}})

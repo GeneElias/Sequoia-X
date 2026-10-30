@@ -113,6 +113,9 @@ def build_report(universe: dict, provider: MarketData, valuations: dict,
         items.sort(key=lambda x: (x["status"].startswith("买入研究"), x["score"],
                                    x["rps"] or 0, x["symbol"]), reverse=True)
         group["candidate_count"] = sum(x["status"].startswith("买入研究") for x in items)
+        group['valuation_ready'] = sum('values' in x['valuation'] for x in items)
+        group['valuation_pending'] = sum(x['valuation']['status'] == '待核验' for x in items)
+        group['confirmed_count'] = sum(x['confirmed'] for x in items)
         group["shown"] = items[:top]
         report["markets"].append(group)
     return report
@@ -155,6 +158,7 @@ def market_markdown(group: dict) -> str:
     lines = [f"## {title}｜完整收盘日 {group['as_of']}",
              f"观察池 {group['pool_size']} 支｜有效 {len(group['items'])} 支｜取数/质量异常 {len(group['errors'])} 支",
              f"买入研究候选 {group['candidate_count']} 支；不足10支不凑数。",
+             f"估值已计算 {group.get('valuation_ready', 0)} 支｜估值待核验 {group.get('valuation_pending', 0)} 支｜量价确认 {group.get('confirmed_count', 0)} 支（条件须同时满足）",
              "股票池：" + ", ".join(group["pool"])]
     if not group["complete"]:
         lines.append("⚠️ 股票池不完整或不足2支：不输出RPS和买入候选；已取到数据仅供观察。")
@@ -171,7 +175,7 @@ def render_markdown(report: dict) -> str:
         report["scope"],
         "量比使用此前20日均量；均线策略忠于原实现，放量基准包含当日。RPS仅在同市场完整观察池内计算。",
         *(market_markdown(g) for g in report["markets"]),
-        "估值方法：FCFF DCF＋三情景现值＋反向DCF＋折现率上调2个百分点压力测试。"
+        "估值方法：人工FCFF DCF或自动净现金股东现金流代理DCF（逐项标注）＋三情景现值＋反向DCF＋折现率上调2个百分点压力测试。"
         "质量与来源由输入材料复核，不使用历史报告预设冒充最新估值。完整假设与来源见 report.json。",
         "免费接口可能延迟或失败；日期为最后完整交易日，不是盘中实时行情。"])
 
@@ -182,13 +186,14 @@ def render_cards(report: dict) -> list[dict]:
     for group in report["markets"]:
         sections = [f"完整收盘日：{group['as_of']}\n观察池 {group['pool_size']}｜有效 {len(group['items'])}｜异常 {len(group['errors'])}\n"
                     f"买入研究候选 {group['candidate_count']}；不足10支不凑数。\n"
+                    f"估值已计算 {group.get('valuation_ready', 0)}｜估值待核验 {group.get('valuation_pending', 0)}｜量价确认 {group.get('confirmed_count', 0)}（须同时满足）\n"
                     "自定义观察池，非全市场排名。估值缺失=待核验。",
                     *(item_markdown(x) for x in group["shown"])]
         if not group["complete"]:
             sections.insert(1, "⚠️ 股票池不完整或不足2支，RPS与买入候选暂不输出。")
         if group["errors"]:
             sections.append("取数异常：" + ", ".join(x["symbol"] for x in group["errors"]))
-        sections.append("量比=此前20日均量；估值基于显式输入与复核状态。行情可能延迟，非交易指令。")
+        sections.append("量比=此前20日均量；自动双源数值核验与人工复核逐项标注，自动核验不等于人工审阅。行情可能延迟，非交易指令。")
         pages, page = [], []
         for section in sections:
             # Lark custom bot message limit is 20 KB. Reserve room for JSON overhead.

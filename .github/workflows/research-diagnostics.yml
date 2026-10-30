@@ -1,9 +1,6 @@
 name: Private research diagnostics
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths: [.github/workflows/research-diagnostics.yml]
 permissions:
   contents: write
   actions: read
@@ -28,15 +25,3 @@ jobs:
         env:
           SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
           GH_TOKEN: ${{ github.token }}
-
-# Probe round 2: annual statement provenance and strict OHLC failures.
-
-# Full preview checks both markets and financial gates without orders or messages.
-
-# Check truthful project-contact user agents and quote metadata.
-
-# Capture normalized SEC concept evidence on reconciliation failures.
-
-# Verify full-year contexts for 52/53-week SEC fiscal calendars.
-
-# Reconcile funded principal separately from conservative lease buffers.

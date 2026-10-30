@@ -35,6 +35,35 @@ def value(row, *names):
     raise FinancialError("财报缺少必需字段：" + names[0])
 
 
+def yahoo_debt(row):
+    """Derive an omitted component only from the vendor's balance identity.
+
+    SEC must still independently match the resulting funded principal. Two
+    missing components cannot be separated; no generic fillna(0) is permitted.
+    """
+    long = value(row, "Long Term Debt")
+
+    def optional(name):
+        try:
+            return value(row, name)
+        except FinancialError:
+            return None
+
+    current, lease = optional("Current Debt"), optional("Capital Lease Obligations")
+    derived = []
+    if current is None and lease is None:
+        raise FinancialError("流动债务与租赁同时缺失，不能从总额拆分")
+    if current is None:
+        current = value(row, "Total Debt") - long - lease
+        derived.append("Current Debt = Total Debt - Long Term Debt - Capital Lease Obligations")
+    if lease is None:
+        lease = value(row, "Total Debt") - long - current
+        derived.append("Lease = Total Debt - Long Term Debt - Current Debt")
+    if min(current, lease, long) < 0:
+        raise FinancialError("债务分拆恒等式出现负数")
+    return current + long, lease, derived
+
+
 def year_periods(frame):
     result = {}
     for column in frame.columns:
@@ -60,14 +89,18 @@ def yahoo_statements(symbol, market, as_of):
         capex = value(c, "Capital Expenditure")
         if capex > 0:
             raise FinancialError("资本开支符号异常")
+        debt, lease, derived = yahoo_debt(b) if market == "US" else (value(b, "Total Debt"), 0, [])
         row = {
             "date": day,
             "cfo": value(c, "Operating Cash Flow"),
             "capex": -capex,
             "shares": value(b, "Ordinary Shares Number"),
-            "cash": value(b, "Cash Cash Equivalents And Short Term Investments") if market == "US" else value(b, "Cash And Cash Equivalents"),
-            "debt": value(b, "Current Debt") + value(b, "Long Term Debt") if market == "US" else value(b, "Total Debt"),
-            "lease_buffer": value(b, "Capital Lease Obligations") if market == "US" else 0.0,
+            "cash": value(b, "Cash Cash Equivalents And Short Term Investments")
+            if market == "US"
+            else value(b, "Cash And Cash Equivalents"),
+            "debt": debt,
+            "lease_buffer": lease,
+            "debt_derivation": derived,
             "net_income": value(i, "Net Income Including Noncontrolling Interests", "Net Income"),
             "common_income": value(i, "Net Income Common Stockholders", "Net Income"),
             "revenue": value(i, "Total Revenue"),
@@ -198,35 +231,67 @@ def sec_statements(symbol, as_of, days, get=requests.get):
             )
             # Canonical funded principal, not Yahoo Total Debt (which can fold
             # in a different lease definition). Match current+noncurrent directly.
-            nc = f(['LongTermDebtNoncurrent'],optional=True)
-            current = f(['DebtCurrent'],optional=True)
-            if current is None:
-                cur=f(['LongTermDebtCurrent'],optional=True)
-                short=f(['ShortTermBorrowings','ShortTermDebtCurrent','CommercialPaper'],optional=True)
-                if cur is None and short is None:
-                    raise FinancialError('SEC流动本金债务口径缺失')
-                current=(cur or 0)+(short or 0)
-            if nc is None:
-                total=f(['LongTermDebt'],optional=True)
-                if total is None:raise FinancialError('SEC长期本金债务口径缺失')
-                cur=f(['LongTermDebtCurrent'],optional=True)
-                if cur is None:raise FinancialError('SEC债务总额缺少流动部分分拆')
-                nc=total-cur
-            total_debt=nc+current
-            cash=f(['CashCashEquivalentsAndShortTermInvestments'],optional=True)
+            combined = f(["DebtLongtermAndShorttermCombinedAmount"], optional=True)
+            if combined is not None:
+                total_debt = combined
+            else:
+                nc = f(["LongTermDebtNoncurrent"], optional=True)
+                current = f(["DebtCurrent"], optional=True)
+                if current is None:
+                    cur = f(["LongTermDebtCurrent"], optional=True)
+                    short = f(
+                        ["ShortTermBorrowings", "ShortTermDebtCurrent", "CommercialPaper"],
+                        optional=True,
+                    )
+                    if cur is None and short is None:
+                        total = f(["LongTermDebt"], optional=True)
+                        if total is None or nc is None:
+                            raise FinancialError("SEC流动本金债务口径缺失")
+                        current = total - nc
+                    else:
+                        current = (cur or 0) + (short or 0)
+                if nc is None:
+                    total = f(["LongTermDebt"], optional=True)
+                    cur = f(["LongTermDebtCurrent"], optional=True)
+                    if total is None or cur is None:
+                        raise FinancialError("SEC长期本金债务缺少分拆")
+                    nc = total - cur
+                if min(nc, current) < 0:
+                    raise FinancialError("SEC债务分拆恒等式出现负数")
+                total_debt = nc + current
+            cash = f(["CashCashEquivalentsAndShortTermInvestments"], optional=True)
             if cash is None:
-                cash=f(['CashAndCashEquivalentsAtCarryingValue'])+f(['ShortTermInvestments'])
-            finance_lease=f(['FinanceLeaseLiability'],optional=True)
-            operating_lease=f(['OperatingLeaseLiability'],optional=True)
+                cash = f(["CashAndCashEquivalentsAtCarryingValue"])
+                short = f(
+                    [
+                        "ShortTermInvestments",
+                        "ShortTermInvestmentsAvailableForSale",
+                        "MarketableSecuritiesCurrent",
+                    ],
+                    optional=True,
+                )
+                if short is not None:
+                    cash += short
+                # Otherwise this is an explicitly conservative cash-only lower
+                # bound. It must still reconcile to the Yahoo value within 1%.
+            finance_lease = f(["FinanceLeaseLiability"], optional=True)
+            operating_lease = f(["OperatingLeaseLiability"], optional=True)
             if finance_lease is None and operating_lease is None:
-                raise FinancialError('SEC租赁义务口径缺失')
-            lease_buffer=(finance_lease or 0)+(operating_lease or 0)
+                raise FinancialError("SEC租赁义务口径缺失")
+            lease_buffer = (finance_lease or 0) + (operating_lease or 0)
             rows.append(
                 {
                     "date": vendor_day,
                     "reported_end": day,
                     "cfo": f(["NetCashProvidedByUsedInOperatingActivities"], True),
-                    "capex": f(["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets"], True),
+                    "capex": f(
+                        [
+                            "PaymentsToAcquirePropertyPlantAndEquipment",
+                            "PaymentsToAcquireProductiveAssets",
+                            "PaymentsToAcquirePropertyPlantAndEquipmentAndIntangibleAssets",
+                        ],
+                        True,
+                    ),
                     "shares": f(["CommonStockSharesOutstanding"]),
                     "cash": cash,
                     "lease_buffer": lease_buffer,
@@ -382,10 +447,15 @@ def verify_record(spec, as_of):
         if e <= 0:
             raise FinancialError("三年中存在负股东现金流，自动模型不适用")
         earnings.append(float(e))
-    lease = max(number(rows[0]['lease_buffer']) for rows in (p,s)) if spec['market']=='US' else number(0)
-    if lease < 0:raise FinancialError('租赁义务数值无效')
-    liquid = min(number(rows[0]['cash']) for rows in (p,s))
-    debt = max(number(rows[0]['debt']) for rows in (p,s))
+    lease = (
+        max(number(rows[0]["lease_buffer"]) for rows in (p, s))
+        if spec["market"] == "US"
+        else number(0)
+    )
+    if lease < 0:
+        raise FinancialError("租赁义务数值无效")
+    liquid = min(number(rows[0]["cash"]) for rows in (p, s))
+    debt = max(number(rows[0]["debt"]) for rows in (p, s))
     if liquid < debt + lease:
         raise FinancialError("现金及短期投资不足以覆盖本金债务和租赁缓冲：需人工FCFF或行业模型")
     if number(p[0]["shares"]) / number(p[-1]["shares"]) > number("1.10"):

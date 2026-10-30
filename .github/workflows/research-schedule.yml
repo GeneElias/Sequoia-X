@@ -5,12 +5,14 @@ on:
     - cron: '0 9 * * 1-5'
     - cron: '30 23 * * 1-5'
     - cron: '0 1 * * 6'
+    # Off-peak recovery checks; encrypted receipts suppress completed sessions.
+    - cron: '13,43 * * * *'
   workflow_dispatch:
     inputs:
       task:
         description: 'selftest uses synthetic tests only; validate checks encrypted state without sending'
         type: choice
-        options: [selftest, validate, daily_A, daily_US, weekly]
+        options: [selftest, validate, daily_A, daily_US, weekly, due]
         default: selftest
 
 permissions:

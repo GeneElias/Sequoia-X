@@ -10,9 +10,7 @@ from sequoia_x.reporting.fundamentals import (
     FinancialError,
     Fundamentals,
     automatic_assessment,
-    reconcile,
     sec_fact,
-    verify_record,
 )
 from sequoia_x.reporting.valuation import assess
 
@@ -182,42 +180,99 @@ def test_refresh_failure_not_zero_or_reviewed_and_cache_expires(tmp_path, monkey
 
 def test_sec_fiscal_mapping_and_funded_debt_are_unambiguous():
     from sequoia_x.reporting.fundamentals import sec_statements
-    end='2025-12-28';facts={}
-    def fact(tag,val,annual=False,unit='USD'):
-        row={'end':end,'filed':'2026-02-01','form':'10-K','val':val}
-        if annual:row['start']='2024-12-29'
-        facts[tag]={'units':{unit:[row]}}
-    for tag,val in [('NetCashProvidedByUsedInOperatingActivities',1300),('PaymentsToAcquireProductiveAssets',200),('NetIncomeLoss',1100),('ProfitLoss',1200),('Revenues',5000),('ShareBasedCompensation',100)]:fact(tag,val,True)
-    for tag,val in [('DebtCurrent',20),('LongTermDebtNoncurrent',80),('CashCashEquivalentsAndShortTermInvestments',2000),('OperatingLeaseLiability',30),('FinanceLeaseLiability',40)]:fact(tag,val)
-    fact('CommonStockSharesOutstanding',100,unit='shares')
-    get=Mock(return_value=Mock(ok=True,json=lambda:{'facts':{'us-gaap':facts}}))
-    rows,_=sec_statements('MSFT','2026-10-30',['2025-12-31'],get=get)
-    assert rows[0]['reported_end']==end and rows[0]['date']=='2025-12-31'
-    assert rows[0]['debt']==100 and rows[0]['lease_buffer']==70
-    assert rows[0]['capex']==200
-    facts['CashCashEquivalentsAndShortTermInvestments']['units']['USD']=[]
-    with pytest.raises(FinancialError,match='CashAndCashEquivalents'):
-        sec_statements('MSFT','2026-10-30',['2025-12-31'],get=get)
+
+    end = "2025-12-28"
+    facts = {}
+
+    def fact(tag, val, annual=False, unit="USD"):
+        row = {"end": end, "filed": "2026-02-01", "form": "10-K", "val": val}
+        if annual:
+            row["start"] = "2024-12-29"
+        facts[tag] = {"units": {unit: [row]}}
+
+    for tag, val in [
+        ("NetCashProvidedByUsedInOperatingActivities", 1300),
+        ("PaymentsToAcquireProductiveAssets", 200),
+        ("NetIncomeLoss", 1100),
+        ("ProfitLoss", 1200),
+        ("Revenues", 5000),
+        ("ShareBasedCompensation", 100),
+    ]:
+        fact(tag, val, True)
+    for tag, val in [
+        ("DebtCurrent", 20),
+        ("LongTermDebtNoncurrent", 80),
+        ("CashCashEquivalentsAndShortTermInvestments", 2000),
+        ("OperatingLeaseLiability", 30),
+        ("FinanceLeaseLiability", 40),
+    ]:
+        fact(tag, val)
+    fact("CommonStockSharesOutstanding", 100, unit="shares")
+    get = Mock(return_value=Mock(ok=True, json=lambda: {"facts": {"us-gaap": facts}}))
+    rows, _ = sec_statements("MSFT", "2026-10-30", ["2025-12-31"], get=get)
+    assert rows[0]["reported_end"] == end and rows[0]["date"] == "2025-12-31"
+    assert rows[0]["debt"] == 100 and rows[0]["lease_buffer"] == 70
+    assert rows[0]["capex"] == 200
+    facts["CashCashEquivalentsAndShortTermInvestments"]["units"]["USD"] = []
+    with pytest.raises(FinancialError, match="CashAndCashEquivalents"):
+        sec_statements("MSFT", "2026-10-30", ["2025-12-31"], get=get)
 
 
 def test_lease_buffer_uses_larger_source_and_blocks_leveraged_equity():
-    spec=automatic()
-    spec['primary'][0]['lease_buffer']=1
-    spec['secondary'][0]['lease_buffer']=2000
-    assert assess(1,'USD',spec,'2026-10-30')['status']=='待核验'
+    spec = automatic()
+    spec["primary"][0]["lease_buffer"] = 1
+    spec["secondary"][0]["lease_buffer"] = 2000
+    assert assess(1, "USD", spec, "2026-10-30")["status"] == "待核验"
 
 
 def test_yahoo_canonical_debt_not_vendor_total_debt(monkeypatch):
     from sequoia_x.reporting.fundamentals import yahoo_statements
     import yfinance as yf
-    dates=pd.to_datetime(['2025-12-31','2024-12-31','2023-12-31'])
-    def df(values):return pd.DataFrame({d:values for d in dates})
-    t=Mock()
-    t.cash_flow=df({'Operating Cash Flow':1300,'Capital Expenditure':-200,'Stock Based Compensation':100})
-    t.income_stmt=df({'Net Income Including Noncontrolling Interests':1200,'Net Income Common Stockholders':1100,'Total Revenue':5000})
-    t.balance_sheet=df({'Ordinary Shares Number':100,'Cash Cash Equivalents And Short Term Investments':2000,'Cash And Cash Equivalents':1000,'Total Debt':999,'Current Debt':20,'Long Term Debt':80,'Capital Lease Obligations':30})
-    t.fast_info={'currency':'USD'}
-    t.history.return_value=pd.DataFrame({'Stock Splits':[0]},index=pd.to_datetime(['2026-10-30']))
-    monkeypatch.setattr(yf,'Ticker',lambda *a:t)
-    rows,_=yahoo_statements('MSFT','US','2026-10-30')
-    assert rows[0]['debt']==100 and rows[0]['cash']==2000 and rows[0]['lease_buffer']==30
+
+    dates = pd.to_datetime(["2025-12-31", "2024-12-31", "2023-12-31"])
+
+    def df(values):
+        return pd.DataFrame({d: values for d in dates})
+
+    t = Mock()
+    t.cash_flow = df(
+        {"Operating Cash Flow": 1300, "Capital Expenditure": -200, "Stock Based Compensation": 100}
+    )
+    t.income_stmt = df(
+        {
+            "Net Income Including Noncontrolling Interests": 1200,
+            "Net Income Common Stockholders": 1100,
+            "Total Revenue": 5000,
+        }
+    )
+    t.balance_sheet = df(
+        {
+            "Ordinary Shares Number": 100,
+            "Cash Cash Equivalents And Short Term Investments": 2000,
+            "Cash And Cash Equivalents": 1000,
+            "Total Debt": 999,
+            "Current Debt": 20,
+            "Long Term Debt": 80,
+            "Capital Lease Obligations": 30,
+        }
+    )
+    t.fast_info = {"currency": "USD"}
+    t.history.return_value = pd.DataFrame(
+        {"Stock Splits": [0]}, index=pd.to_datetime(["2026-10-30"])
+    )
+    monkeypatch.setattr(yf, "Ticker", lambda *a: t)
+    rows, _ = yahoo_statements("MSFT", "US", "2026-10-30")
+    assert rows[0]["debt"] == 100 and rows[0]["cash"] == 2000 and rows[0]["lease_buffer"] == 30
+
+
+def test_missing_maturity_requires_balance_identity_not_fillna():
+    from sequoia_x.reporting.fundamentals import yahoo_debt
+
+    debt, lease, derived = yahoo_debt(
+        {"Long Term Debt": 80, "Total Debt": 110, "Capital Lease Obligations": 30}
+    )
+    assert debt == 80 and lease == 30 and derived
+    with pytest.raises(FinancialError, match="同时缺失"):
+        yahoo_debt({"Long Term Debt": 80, "Total Debt": 110})
+    with pytest.raises(FinancialError, match="负数"):
+        yahoo_debt({"Long Term Debt": 80, "Total Debt": 90, "Capital Lease Obligations": 30})

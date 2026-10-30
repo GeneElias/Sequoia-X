@@ -174,10 +174,15 @@ class MarketData:
             event_frame = event_frame.loc[event_frame.index <= as_of]
             if event_frame.empty or event_frame.index[-1] != as_of or 'stock_splits' not in event_frame:
                 raise ValueError('拆股事件覆盖不足')
+            common = h.frame.index.intersection(event_frame.index)
+            h.frame = h.frame.loc[common].copy()
+            validate_window(h.frame, market, as_of)
             aligned = event_frame.reindex(h.frame.index)
-            if aligned.stock_splits.isna().any() or aligned.raw_close.isna().any():
+            if aligned.stock_splits.isna().any():
                 raise ValueError('拆股事件存在缺口')
-            if ((aligned.raw_close / h.frame.raw_close - 1).abs() > .01).any():
+            # Yahoo historic Close may already reflect later splits; only compare
+            # the latest raw close. Dated Yahoo splits cover the retained window.
+            if pd.isna(aligned.loc[as_of,'raw_close']) or abs(aligned.loc[as_of,'raw_close'] / h.frame.loc[as_of,'raw_close'] - 1) > .01:
                 raise ValueError('两源原始收盘价差异超过1%，暂停模拟成交')
             h.frame['stock_splits'] = aligned.stock_splits
             return h

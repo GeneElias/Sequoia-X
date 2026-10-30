@@ -26,10 +26,15 @@ def test_encrypted_roundtrip_excludes_env_and_key_files(tmp_path):
     key = Fernet.generate_key()
     root = state_root(tmp_path / "source")
     (root / "_state/github-state.key").write_bytes(key)
+    for name in ('fundamentals.json','operations.json','diagnostics.json'):
+        (root/'_state'/name).write_text('{"private":"PRIVATE_AUDIT_MARKER"}')
     encrypted = encrypted_snapshot(root, key)
     assert b"PRIVATE_PORTFOLIO_MARKER" not in encrypted and key not in encrypted
     restored = tmp_path / "restored"
     restore_snapshot(encrypted, restored, key)
+    for name in ('fundamentals.json','operations.json','diagnostics.json'):
+        assert json.loads((restored/'_state'/name).read_text())['private']=='PRIVATE_AUDIT_MARKER'
+    assert b'PRIVATE_AUDIT_MARKER' not in encrypted
     assert not (restored / ".env").exists()
     assert not (restored / "_state/github-state.key").exists()
     assert "PRIVATE_PORTFOLIO_MARKER" in (restored / "paper/daily/2026-10-23-US/report.json").read_text()
@@ -113,5 +118,5 @@ def test_live_workflow_can_pause_is_serial_and_preserves_timezone():
     text = Path('.github/workflows/research-schedule.yml').read_text()
     assert "vars.SEQUOIA_ENABLED != 'false'" in text
     assert "cancel-in-progress: false" in text and "contents: write" in text
-    assert all(cron in text for cron in ('0 9 * * 1-5','30 23 * * 1-5','0 1 * * 6'))
+    assert all(cron in text for cron in ('0 9 * * 1-5','30 23 * * 1-5','0 1 * * 6','13,43 * * * *'))
     assert 'pull_request:' not in text and 'upload-artifact' not in text

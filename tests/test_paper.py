@@ -30,7 +30,7 @@ def quote(day="2026-10-26", price=105, split=0, market="US", locked=False):
 
 def register(book, monkeypatch, day="2026-10-23", market="US", symbol="MSFT"):
     monkeypatch.setattr("sequoia_x.reporting.paper.latest_session", lambda *a: day)
-    return book.register(signal(day, market, symbol))
+    return book.register(signal(day, market, symbol), now=datetime.fromisoformat(day+"T22:00:00+00:00"))
 
 
 def test_100_shares_next_open_and_idempotence(tmp_path, monkeypatch):
