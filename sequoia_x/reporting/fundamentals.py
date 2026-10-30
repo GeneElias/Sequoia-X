@@ -95,28 +95,41 @@ def sec_statements(symbol, as_of, days, get=requests.get):
     r=get(url,headers={'User-Agent':'Sequoia-X research GeneElias/Sequoia-X'},timeout=15)
     if not r.ok:raise FinancialError(f'SEC财报接口HTTP {r.status_code}，未跳过独立核验')
     facts=r.json()['facts']['us-gaap'];rows=[]
-    for day in days:
-        f=lambda tags,annual=False,optional=False:sec_fact(facts,tags,day,as_of,annual,optional)
-        # Include lease liabilities where the issuer reports them with funded debt.
-        total_debt=f(['LongTermDebtAndFinanceLeaseObligationsIncludingCurrentMaturities'],optional=True)
-        if total_debt is None:
-            nc=f(['LongTermDebtAndFinanceLeaseObligationsNoncurrent','LongTermDebtNoncurrent'],optional=True)
-            cur=f(['LongTermDebtAndFinanceLeaseObligationsCurrent','LongTermDebtCurrent'],optional=True)
-            short=f(['ShortTermBorrowings','ShortTermDebtCurrent','CommercialPaper'],optional=True)
-            if nc is None and cur is None and short is None:
-                # A missing debt concept is not proof of zero debt.
-                raise FinancialError('SEC债务口径不完整')
-            total_debt=(nc or 0)+(cur or 0)+(short or 0)
-        rows.append({'date':day,
-            'cfo':f(['NetCashProvidedByUsedInOperatingActivities'],True),
-            'capex':f(['PaymentsToAcquirePropertyPlantAndEquipment'],True),
-            'shares':f(['CommonStockSharesOutstanding']),
-            'cash':f(['CashAndCashEquivalentsAtCarryingValue']),
-            'debt':total_debt,
-            'net_income':f(['ProfitLoss','NetIncomeLoss'],True),
-            'common_income':f(['NetIncomeLossAvailableToCommonStockholdersBasic','NetIncomeLoss'],True),
-            'revenue':f(['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet'],True),
-            'sbc':f(['ShareBasedCompensation'],True)})
+    evidence={}
+    terms=('debt','borrow','lease','cashandcashequivalents','cashcashequivalentsandshort','paymentstoacquire','commonstockshares','netcashprovidedbyusedinoperat','sharebasedcompensation','profitloss','netincomeloss','revenues','revenuefromcontract','salesrevenuenet')
+    for tag,item in facts.items():
+        if not any(t in tag.lower() for t in terms):continue
+        selected={}
+        for unit,entries in item.get('units',{}).items():
+            matches=[x for x in entries if x.get('end') in days and x.get('filed','9999')<=as_of]
+            if matches:selected[unit]=matches[-18:]
+        if selected:evidence[tag]={'units':selected}
+    try:
+        for day in days:
+            f=lambda tags,annual=False,optional=False:sec_fact(facts,tags,day,as_of,annual,optional)
+            # Include lease liabilities where the issuer reports them with funded debt.
+            total_debt=f(['LongTermDebtAndFinanceLeaseObligationsIncludingCurrentMaturities'],optional=True)
+            if total_debt is None:
+                nc=f(['LongTermDebtAndFinanceLeaseObligationsNoncurrent','LongTermDebtNoncurrent'],optional=True)
+                cur=f(['LongTermDebtAndFinanceLeaseObligationsCurrent','LongTermDebtCurrent'],optional=True)
+                short=f(['ShortTermBorrowings','ShortTermDebtCurrent','CommercialPaper'],optional=True)
+                if nc is None and cur is None and short is None:
+                    # A missing debt concept is not proof of zero debt.
+                    raise FinancialError('SEC债务口径不完整')
+                total_debt=(nc or 0)+(cur or 0)+(short or 0)
+            rows.append({'date':day,
+                'cfo':f(['NetCashProvidedByUsedInOperatingActivities'],True),
+                'capex':f(['PaymentsToAcquirePropertyPlantAndEquipment'],True),
+                'shares':f(['CommonStockSharesOutstanding']),
+                'cash':f(['CashAndCashEquivalentsAtCarryingValue']),
+                'debt':total_debt,
+                'net_income':f(['ProfitLoss','NetIncomeLoss'],True),
+                'common_income':f(['NetIncomeLossAvailableToCommonStockholdersBasic','NetIncomeLoss'],True),
+                'revenue':f(['RevenueFromContractWithCustomerExcludingAssessedTax','Revenues','SalesRevenueNet'],True),
+                'sbc':f(['ShareBasedCompensation'],True)})
+    except FinancialError as exc:
+        exc.evidence=evidence
+        raise
     return rows,{'upstream':'SEC','url':url}
 
 
@@ -267,12 +280,15 @@ class Fundamentals:
                 rows,source=yahoo_statements(symbol,market,as_of)
                 rows=[r for r in rows if r['date']<=as_of][:3]
                 if len(rows)<3:raise FinancialError('Yahoo不足三个完整年度财报')
+                spec.update(primary=rows,sources=[source])
                 days=[r['date'] for r in rows]
                 other,source2=(sec_statements(symbol,as_of,days) if market=='US' else sina_statements(symbol,as_of,days))
                 spec.update(primary=rows,secondary=other,sources=[source,source2])
                 spec['input_checks']=reconcile(rows,other)
                 verify_record(spec,as_of)
-            except FinancialError as exc:spec['blocked_reason']=str(exc)
+            except FinancialError as exc:
+                spec['blocked_reason']=str(exc)
+                if hasattr(exc,'evidence'):spec['secondary_evidence']=exc.evidence
             except Exception as exc:spec['blocked_reason']=f'财报获取失败（{type(exc).__name__}），未以空值补零'
             self.records[key]=spec
         self.path.parent.mkdir(parents=True,exist_ok=True)

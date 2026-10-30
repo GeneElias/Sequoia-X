@@ -34,3 +34,5 @@ jobs:
 # Full preview checks both markets and financial gates without orders or messages.
 
 # Check truthful project-contact user agents and quote metadata.
+
+# Capture normalized SEC concept evidence on reconciliation failures.
