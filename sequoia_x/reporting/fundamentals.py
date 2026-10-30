@@ -101,23 +101,33 @@ def sec_statements(symbol, as_of, days, get=requests.get):
         if not any(t in tag.lower() for t in terms):continue
         selected={}
         for unit,entries in item.get('units',{}).items():
-            matches=[x for x in entries if x.get('end') in days and x.get('filed','9999')<=as_of]
+            matches=[x for x in entries if x.get('end') and any(abs((date.fromisoformat(x['end'])-date.fromisoformat(d)).days)<=7 for d in days) and x.get('filed','9999')<=as_of]
             if matches:selected[unit]=matches[-18:]
         if selected:evidence[tag]={'units':selected}
     try:
-        for day in days:
+        for vendor_day in days:
+            # Some vendors label 52/53-week fiscal years by month-end. Map only
+            # to a unique nearby full-year CFO context, then reconcile every amount.
+            ends=set()
+            for x in facts.get('NetCashProvidedByUsedInOperatingActivities',{}).get('units',{}).get('USD',[]):
+                if (x.get('filed','9999')<=as_of and x.get('form') in {'10-K','10-K/A'} and x.get('start')
+                    and abs((date.fromisoformat(x['end'])-date.fromisoformat(vendor_day)).days)<=7
+                    and 350<=(date.fromisoformat(x['end'])-date.fromisoformat(x['start'])).days<=380):ends.add(x['end'])
+            if len(ends)!=1:raise FinancialError('SEC无法唯一匹配完整财年，未用季度替代')
+            day=ends.pop()
             f=lambda tags,annual=False,optional=False:sec_fact(facts,tags,day,as_of,annual,optional)
             # Include lease liabilities where the issuer reports them with funded debt.
-            total_debt=f(['LongTermDebtAndFinanceLeaseObligationsIncludingCurrentMaturities'],optional=True)
+            total_debt=f(['LongTermDebtAndFinanceLeaseObligationsIncludingCurrentMaturities','LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities','LongTermDebtAndCapitalLeaseObligations'],optional=True)
             if total_debt is None:
                 nc=f(['LongTermDebtAndFinanceLeaseObligationsNoncurrent','LongTermDebtNoncurrent'],optional=True)
                 cur=f(['LongTermDebtAndFinanceLeaseObligationsCurrent','LongTermDebtCurrent'],optional=True)
                 short=f(['ShortTermBorrowings','ShortTermDebtCurrent','CommercialPaper'],optional=True)
                 if nc is None and cur is None and short is None:
-                    # A missing debt concept is not proof of zero debt.
-                    raise FinancialError('SEC债务口径不完整')
+                    combined=f(['LongTermDebt'],optional=True)
+                    if combined is None:raise FinancialError('SEC债务口径不完整')
+                    nc=combined
                 total_debt=(nc or 0)+(cur or 0)+(short or 0)
-            rows.append({'date':day,
+            rows.append({'date':vendor_day,'reported_end':day,
                 'cfo':f(['NetCashProvidedByUsedInOperatingActivities'],True),
                 'capex':f(['PaymentsToAcquirePropertyPlantAndEquipment'],True),
                 'shares':f(['CommonStockSharesOutstanding']),
