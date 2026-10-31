@@ -1,0 +1,349 @@
+{
+  "review": "Vibe-Research public endpoint connectivity only",
+  "upstream_commit": "84c141b86b5e7540b29f5f4cd5457dc0ebd6052e",
+  "generated_at": "2026-10-31T16:31:42.114825+00:00",
+  "run_id": "41220083581",
+  "no_private_inputs": true,
+  "production_modified": false,
+  "cases": [
+    {
+      "test": "CN_tencent_kline",
+      "market": "CN",
+      "fixed_public_test_symbol": "600519",
+      "row_count": 160,
+      "field_names": [
+        "adjust",
+        "close",
+        "code",
+        "date",
+        "fetched_at",
+        "high",
+        "low",
+        "open",
+        "source",
+        "source_url",
+        "volume"
+      ],
+      "dates": [
+        "2026-10-23",
+        "2026-10-26",
+        "2026-10-27",
+        "2026-10-28",
+        "2026-10-29",
+        "2026-10-30"
+      ],
+      "currency_tags": [],
+      "invalid_ohlcv_rows": 0,
+      "status": "returned_rows",
+      "seconds": 1.36
+    },
+    {
+      "test": "US_yahoo_kline",
+      "market": "US",
+      "fixed_public_test_symbol": "AAPL",
+      "row_count": 251,
+      "field_names": [
+        "close",
+        "date",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "dates": [
+        "2026-10-23",
+        "2026-10-26",
+        "2026-10-27",
+        "2026-10-28",
+        "2026-10-29",
+        "2026-10-30"
+      ],
+      "currency_tags": [],
+      "invalid_ohlcv_rows": 0,
+      "status": "returned_rows",
+      "seconds": 0.1
+    },
+    {
+      "test": "HK_yahoo_kline",
+      "market": "HK",
+      "fixed_public_test_symbol": "00700",
+      "row_count": 247,
+      "field_names": [
+        "close",
+        "date",
+        "high",
+        "low",
+        "open",
+        "volume"
+      ],
+      "dates": [
+        "2026-10-23",
+        "2026-10-26",
+        "2026-10-27",
+        "2026-10-28",
+        "2026-10-29",
+        "2026-10-30"
+      ],
+      "currency_tags": [],
+      "invalid_ohlcv_rows": 0,
+      "status": "returned_rows",
+      "seconds": 0.11
+    },
+    {
+      "test": "US_eastmoney_balance",
+      "market": "US",
+      "fixed_public_test_symbol": "AAPL",
+      "row_count": 50,
+      "field_names": [
+        "ACCOUNT_STANDARD",
+        "AMOUNT",
+        "CURRENCY",
+        "CURRENCY_ABBR",
+        "DATE_TYPE_CODE",
+        "FISCAL_YEAR",
+        "ITEM_NAME",
+        "ORG_CODE",
+        "ORG_TYPE",
+        "ORIG_FISCAL_YEAR",
+        "REMARK",
+        "REPORT",
+        "REPORT_DATE",
+        "REPORT_TYPE",
+        "REPORT_TYPE_DETAILS",
+        "SECUCODE",
+        "SECURITY_CODE",
+        "SECURITY_NAME_ABBR",
+        "STD_ITEM_CODE",
+        "STD_REPORT_DATE",
+        "YOY_RATIO"
+      ],
+      "dates": [
+        "2026-03-28",
+        "2026-06-27"
+      ],
+      "currency_tags": [
+        "美元"
+      ],
+      "item_labels": [
+        "其他应收款",
+        "其他流动负债",
+        "其他流动资产",
+        "其他综合收益",
+        "其他非流动负债",
+        "其他非流动资产",
+        "存货",
+        "应付票据(流动)",
+        "应付账款",
+        "应收账款",
+        "归属于母公司股东权益",
+        "总负债",
+        "总资产",
+        "无形资产",
+        "普通股",
+        "有价证券投资(流动)",
+        "有价证券投资(非流动)",
+        "流动负债合计"
+      ],
+      "status": "returned_rows",
+      "seconds": 7.48
+    },
+    {
+      "test": "US_eastmoney_cashflow",
+      "market": "US",
+      "fixed_public_test_symbol": "AAPL",
+      "row_count": 50,
+      "field_names": [
+        "ACCOUNT_STANDARD",
+        "AMOUNT",
+        "CURRENCY",
+        "CURRENCY_ABBR",
+        "DATE_TYPE_CODE",
+        "FISCAL_YEAR",
+        "ITEM_NAME",
+        "ORG_CODE",
+        "ORG_TYPE",
+        "ORIG_FISCAL_YEAR",
+        "REMARK",
+        "REPORT",
+        "REPORT_DATE",
+        "REPORT_TYPE",
+        "REPORT_TYPE_DETAILS",
+        "SECUCODE",
+        "SECURITY_CODE",
+        "SECURITY_NAME_ABBR",
+        "START_DATE",
+        "STD_ITEM_CODE",
+        "STD_REPORT_DATE",
+        "YOY_RATIO"
+      ],
+      "dates": [
+        "2026-03-28",
+        "2026-06-27"
+      ],
+      "currency_tags": [
+        "美元"
+      ],
+      "item_labels": [
+        "其他投资活动产生的现金流量净额",
+        "其他筹资活动产生的现金流量净额",
+        "净利润",
+        "发行债券",
+        "回购股份",
+        "基于股票的补偿费",
+        "存货",
+        "应付账款及票据",
+        "应收账款及票据",
+        "所得税支付",
+        "投资业务其他项目",
+        "投资支付现金",
+        "投资活动产生的现金流量净额",
+        "折旧及摊销",
+        "现金及现金等价物增加(减少)额",
+        "现金及现金等价物期初余额",
+        "现金及现金等价物期末余额",
+        "筹资业务其他项目"
+      ],
+      "status": "returned_rows",
+      "seconds": 2.02
+    },
+    {
+      "test": "HK_eastmoney_balance",
+      "market": "HK",
+      "fixed_public_test_symbol": "00700",
+      "row_count": 50,
+      "field_names": [
+        "ACCOUNT_STANDARD",
+        "AMOUNT",
+        "CURRENCY",
+        "CURRENCY_CODE",
+        "DATE_TYPE_CODE",
+        "FISCAL_YEAR",
+        "ITEM_NAME",
+        "ORG_CODE",
+        "ORG_TYPE",
+        "ORIG_FISCAL_YEAR",
+        "REMARK",
+        "REPORT",
+        "REPORT_DATE",
+        "REPORT_TYPE",
+        "REPORT_TYPE_DETAILS",
+        "SECUCODE",
+        "SECURITY_CODE",
+        "SECURITY_NAME_ABBR",
+        "STD_ITEM_CODE",
+        "STD_REPORT_DATE",
+        "YOY_RATIO"
+      ],
+      "dates": [
+        "2026-06-30"
+      ],
+      "currency_tags": [
+        "人民币"
+      ],
+      "item_labels": [
+        "中长期存款",
+        "保留溢利(累计亏损)",
+        "其他储备",
+        "其他金融负债(流动)",
+        "其他金融负债(非流动)",
+        "其他金融资产(流动)",
+        "其他金融资产(非流动)",
+        "净流动资产",
+        "净资产",
+        "受限制存款及现金",
+        "合营公司权益",
+        "土地使用权",
+        "在建工程",
+        "存货",
+        "少数股东权益",
+        "库存股",
+        "应付票据(非流动)",
+        "应收帐款"
+      ],
+      "status": "returned_rows",
+      "seconds": 1.82
+    },
+    {
+      "test": "US_financials_pit",
+      "market": "US",
+      "fixed_public_test_symbol": "AAPL",
+      "dropped_after_as_of": 0,
+      "dropped_no_notice": 0,
+      "dropped_too_old": 11,
+      "fetched_rows": 30,
+      "row_count": 19,
+      "field_names": [
+        "code",
+        "currency",
+        "currency_raw",
+        "date_type",
+        "end",
+        "eps_basic",
+        "eps_diluted",
+        "kind",
+        "months",
+        "net_profit_parent",
+        "notice_date",
+        "period",
+        "report_type",
+        "revenue",
+        "start"
+      ],
+      "dates": [
+        "2025-03-29",
+        "2025-06-28",
+        "2025-09-27",
+        "2025-12-27",
+        "2026-03-28",
+        "2026-06-27"
+      ],
+      "currency_tags": [
+        "USD"
+      ],
+      "item_labels": [],
+      "status": "returned_rows",
+      "seconds": 2.05
+    },
+    {
+      "test": "HK_financials_pit",
+      "market": "HK",
+      "fixed_public_test_symbol": "00700",
+      "dropped_after_as_of": 0,
+      "dropped_no_notice": 0,
+      "dropped_too_old": 19,
+      "fetched_rows": 30,
+      "row_count": 11,
+      "field_names": [
+        "code",
+        "currency",
+        "currency_raw",
+        "date_type",
+        "end",
+        "eps_basic",
+        "eps_diluted",
+        "kind",
+        "months",
+        "net_profit_parent",
+        "notice_date",
+        "period",
+        "report_type",
+        "revenue",
+        "start"
+      ],
+      "dates": [
+        "2025-03-31",
+        "2025-06-30",
+        "2025-09-30",
+        "2025-12-31",
+        "2026-03-31",
+        "2026-06-30"
+      ],
+      "currency_tags": [
+        "CNY"
+      ],
+      "item_labels": [],
+      "status": "returned_rows",
+      "seconds": 2.0
+    }
+  ]
+}
