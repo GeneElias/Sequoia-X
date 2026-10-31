@@ -1,0 +1,50 @@
+name: Isolated Vibe Research public source review
+on:
+  workflow_dispatch:
+  push:
+    branches: [audit/vibe-research-20261101]
+    paths: [.github/workflows/vibe-source-probe.yml, audit/vibe_source_probe.py]
+permissions:
+  contents: write
+concurrency:
+  group: vibe-research-source-review
+  cancel-in-progress: false
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: simonlin1212/Vibe-Research
+          ref: 84c141b86b5e7540b29f5f4cd5457dc0ebd6052e
+          path: upstream
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install requests pandas
+      - name: Probe fixed public symbols without user Secrets or production state
+        run: python source/audit/vibe_source_probe.py upstream source/audit/vibe-source-results-20261101.json
+      - name: Save operational schema and status metadata to isolated audit branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import os,json,base64
+          from pathlib import Path
+          import requests
+          branch='audit/vibe-research-20261101'
+          url='https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/contents/audit/vibe-source-results-20261101.json'
+          headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'}
+          existing=requests.get(url,params={'ref':branch},headers=headers,timeout=20)
+          body={'message':'Record public endpoint connectivity review metadata','branch':branch,'content':base64.b64encode(Path('source/audit/vibe-source-results-20261101.json').read_bytes()).decode()}
+          if existing.status_code==200:body['sha']=existing.json()['sha']
+          elif existing.status_code!=404:raise SystemExit('Metadata lookup failed, HTTP '+str(existing.status_code))
+          result=requests.put(url,headers=headers,json=body,timeout=20)
+          if result.status_code not in (200,201):raise SystemExit('Metadata save failed, HTTP '+str(result.status_code))
+          print('Saved review metadata; production branch and private data untouched.')
