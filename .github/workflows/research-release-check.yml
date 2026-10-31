@@ -43,3 +43,5 @@ jobs:
           FEISHU_REPORT_WEBHOOK_URL: ${{ secrets.FEISHU_REPORT_WEBHOOK_URL }}
           FEISHU_REPORT_SECRET: ${{ secrets.FEISHU_REPORT_SECRET }}
           FEISHU_DASHBOARD_URL: ${{ vars.FEISHU_DASHBOARD_URL || 'https://geneelias.github.io/Sequoia-X/' }}
+
+# Verify unhealthy-report recovery separately from HTTP delivery receipts.

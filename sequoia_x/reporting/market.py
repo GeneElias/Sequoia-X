@@ -73,7 +73,10 @@ def normalize(frame: pd.DataFrame, as_of: str) -> pd.DataFrame:
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
     values = frame[required]
     if values.isna().any().any() or values.isin([float('inf'), -float('inf')]).any().any():
-        raise ValueError("日线有缺失或非有限值")
+        invalid = values.isna() | values.isin([float('inf'), -float('inf')])
+        columns = ','.join(c for c in required if invalid[c].any())
+        dates = ','.join(frame.index[invalid.any(axis=1)].tolist()[-5:])
+        raise MarketDataError(f"日线有缺失或非有限值（列：{columns}；日期：{dates}）")
     if (frame[["open", "high", "low", "close"]] <= 0).any().any():
         raise ValueError("价格必须为正")
     if (frame.volume < 0).any() or (frame.high < frame[["open", "close", "low"]].max(axis=1)).any():
