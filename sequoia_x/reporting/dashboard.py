@@ -1,6 +1,7 @@
 """Self-contained dashboard export. Read-only, no network and no secrets embedded."""
 
 import argparse
+from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -28,7 +29,7 @@ def empty_dataset(public: bool = False) -> dict:
     return data
 
 
-def dataset(root: Path) -> dict:
+def dataset(root: Path, portfolio="strict_value", include_portfolios=True) -> dict:
     data = empty_dataset()
     # Whitelist each field. Never export raw SQLite, assumptions, source files, URLs or .env.
     for path in sorted(root.glob("paper/daily/*/report.json")):
@@ -52,7 +53,10 @@ def dataset(root: Path) -> dict:
             market = state.get("market")
             if market in data["markets"]:
                 data["markets"][market]["delivery"] = state.get("delivery", {}).get("status", "unknown")
-    book = root / "_state" / "paper.sqlite"
+    book = root / "_state" / ("paper.sqlite" if portfolio == "strict_value" else "paper-technical.sqlite")
+    if portfolio == "technical":
+        for m in data["markets"].values():
+            m["candidate_count"] = min(10, sum(bool(x["confirmed"]) and x["valuation"].get("status") != "否决" for x in m["observations"])) if m["complete"] else 0
     if book.exists():
         with sqlite3.connect(book.resolve().as_uri() + "?mode=ro", uri=True) as c:
             c.row_factory = sqlite3.Row
@@ -77,6 +81,8 @@ def dataset(root: Path) -> dict:
                 m["fill_count"] = c.execute("SELECT COUNT(*) FROM fills WHERE market=?", (market,)).fetchone()[0]
     for path in sorted(root.glob("paper/weekly/*/review.json"))[-52:]:
         weekly = json.loads(path.read_text())
+        if portfolio == "technical":
+            weekly = weekly.get("portfolios", {}).get("technical", {})
         for group in weekly.get("markets", []):
             if group["market"] not in data["markets"]:
                 continue
@@ -86,12 +92,27 @@ def dataset(root: Path) -> dict:
     heartbeat = root / "_state" / "scheduler-status.json"
     if heartbeat.exists():
         data["scheduler"] = select(json.loads(heartbeat.read_text()), "heartbeat timezone lifetime")
+    if include_portfolios:
+        technical = dataset(root, "technical", include_portfolios=False)
+        marker = root / "_state/portfolios.json"
+        activation = json.loads(marker.read_text()) if marker.exists() else {}
+        for market, m in technical["markets"].items():
+            first = activation.get("technical_first_signal", {}).get(market)
+            if not first or not m["as_of"] or m["as_of"] < first:
+                m["candidate_count"] = 0
+            m["first_signal"] = first
+        data["portfolios"] = {
+            "strict_value": {"label": "严格价值组合", "markets": deepcopy(data["markets"])},
+            "technical": {"label": "量价实验组合", "markets": technical["markets"]}}
     return data
 
 
 def export_dashboard(root: Path, output: Path, public: bool = False) -> Path:
     # Public pages never read a private root, including one containing valid reports.
     data = empty_dataset(public=True) if public else dataset(root)
+    if public:
+        data["portfolios"] = {key: {"label": label, "markets": deepcopy(data["markets"])}
+                              for key, label in (("strict_value", "严格价值组合"), ("technical", "量价实验组合"))}
     # Keep JSON inside a non-executable script element without allowing </script> breakout.
     encoded = json.dumps(data, ensure_ascii=False, allow_nan=False)
     escaped = (encoded.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")

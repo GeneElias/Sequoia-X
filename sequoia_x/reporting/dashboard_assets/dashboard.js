@@ -1,7 +1,8 @@
 "use strict";
 (() => {
   const DATA = JSON.parse(document.getElementById("dashboard-data").textContent);
-  let market = "A", sortKey = "rps", descending = true;
+  let portfolio = "strict_value", market = "A", sortKey = "rps", descending = true;
+  const markets = () => DATA.portfolios?.[portfolio]?.markets || DATA.markets;
   const $ = id => document.getElementById(id);
   const num = x => x === null || x === undefined || x === "" || !Number.isFinite(Number(x)) ? null : Number(x);
   const money = x => num(x) === null ? "—" : Number(x).toLocaleString("zh-CN", {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -16,7 +17,7 @@
     const term=$("search").value.trim().toLowerCase(), filter=$("status-filter").value;
     const rows=m.observations.filter(x=>{
       const match=(x.symbol+" "+(x.name||"")).toLowerCase().includes(term);
-      const yes=filter==="all" || (filter==="candidate" && x.status.startsWith("买入研究")) ||
+      const yes=filter==="all" || (filter==="candidate" && (portfolio==="technical" ? m.complete && x.confirmed && x.valuation.status!=="否决" : x.status.startsWith("买入研究"))) ||
         (filter==="pending" && x.valuation.status==="待核验") ||
         (filter==="watch" && (x.status.includes("观察")||x.status.includes("等待价格")));
       return match&&yes;
@@ -28,7 +29,7 @@
       tone(cell(row,percent(item.return120)),item.return120);cell(row,num(item.volume_ratio)===null?"—":Number(item.volume_ratio).toFixed(2)+"×");
       const sig=cell(row,undefined);sig.append(el("span",(item.signals||[]).join(" / ")||"等待确认","tag neutral"));
       const status=cell(row,undefined),pending=item.valuation.status==="待核验";
-      status.append(el("span",item.valuation.status||"待核验","tag "+(pending?"pending":item.status.startsWith("买入研究")?"good":"neutral")),el("div",item.status,"status-sub"));
+      status.append(el("span",item.valuation.status||"待核验","tag "+(pending?"pending":item.status.startsWith("买入研究")?"good":"neutral")),el("div",portfolio==="technical"&&item.confirmed?"量价确认（估值单列）":item.status,"status-sub"));
       $("signals-body").appendChild(row);
     }
     set("signal-count",`${rows.length} / ${m.observations.length}`);empty("signals-empty",rows.length===0);
@@ -71,23 +72,25 @@
     container.appendChild(svg);
   }
   function render(){
-    const m=DATA.markets[market], last=m.history[m.history.length-1], invested=last&&num(last.contributed)>0;
+    const m=markets()[market], last=m.history[m.history.length-1], invested=last&&num(last.contributed)>0;
     set("asof",m.as_of||(DATA.audience==="public"?"尚未公开数据":"等待首次报告"));set("currency",m.currency);set("coverage",`已发布观察项 ${m.valid} / ${m.pool_size}`);
     set("equity",last?money(last.equity):"—");set("capital",`累计虚拟投入 ${last?money(last.contributed):"—"} ${m.currency}`);
     set("pnl",last?money(last.pnl):"—");tone($("pnl"),last?.pnl);set("return",last?percent(last.return):"—");tone($("return"),last?.return);
     set("return-note",invested?"价格盈亏 / 累计虚拟投入，非年化":"无投入，不计算收益率");
     set("counts",DATA.audience==="public"?"— / —":`${m.candidate_count} / ${m.fill_count??m.fills.length}`);
-    set("notice",DATA.audience==="public"?"公开页面尚未发布真实数据。研究报告与模拟账本通过飞书和加密状态保存；这里不填充虚构内容。":!m.complete?"数据待补齐：观察池未完整取数，暂停RPS和买入推荐。":m.candidate_count===0?"保持纪律：当前没有完成量价与估值双重核验的推荐。观察项不自动转为模拟买单。":"合格推荐仅供研究；模拟订单在下一交易日开盘结算，不使用未来价格补单。");
+    set("portfolio-rule",portfolio==="technical"?"量价信号独立模拟 · 估值意见单列":"量价与估值双重通过 · 严格价值组合");
+    set("notice",DATA.audience==="public"?"公开页面尚未发布真实数据。研究报告与模拟账本通过飞书和加密状态保存；这里不填充虚构内容。":!m.complete?"数据待补齐：观察池未完整取数，暂停RPS和买入推荐。":portfolio==="technical"?`量价实验组合：首个信号日 ${m.first_signal||"待启用"}。估值待核验不阻止模拟登记；不代表基本面估值通过。`:m.candidate_count===0?"严格价值组合暂无合格项；估值覆盖不足也会造成零推荐，不能据此判断市场没有机会。":"合格推荐仅供研究；模拟订单在下一交易日开盘结算，不使用未来价格补单。");
     const delivery={blocked_missing_webhook:"飞书待配置 · 日报已保存在本地",preview_only:"本地预览 · 未发送到飞书",attempted:"飞书已尝试发送 · 以发送账本为准"};set("delivery",DATA.audience==="public"?"真实报告通过飞书推送":delivery[m.delivery]||"飞书发送状态待核验");
     document.querySelectorAll("[data-market]").forEach(b=>{b.classList.toggle("selected",b.dataset.market===market);b.setAttribute("aria-pressed",String(b.dataset.market===market));});
     renderSignals(m);renderPositions(m);renderWeekly(m);renderOrders(m);renderChart(m);
   }
   document.querySelectorAll("[data-market]").forEach(b=>b.addEventListener("click",()=>{market=b.dataset.market;render();}));
-  for(const id of ["search","status-filter"])$(id).addEventListener(id==="search"?"input":"change",()=>renderSignals(DATA.markets[market]));
-  for(const id of ["chart-metric","chart-range"])$(id).addEventListener("change",()=>renderChart(DATA.markets[market]));
-  document.querySelectorAll("[data-sort]").forEach(b=>b.addEventListener("click",()=>{descending=b.dataset.sort===sortKey?!descending:true;sortKey=b.dataset.sort;renderSignals(DATA.markets[market]);}));
+  $("portfolio").addEventListener("change",()=>{portfolio=$("portfolio").value;render();});
+  for(const id of ["search","status-filter"])$(id).addEventListener(id==="search"?"input":"change",()=>renderSignals(markets()[market]));
+  for(const id of ["chart-metric","chart-range"])$(id).addEventListener("change",()=>renderChart(markets()[market]));
+  document.querySelectorAll("[data-sort]").forEach(b=>b.addEventListener("click",()=>{descending=b.dataset.sort===sortKey?!descending:true;sortKey=b.dataset.sort;renderSignals(markets()[market]);}));
   document.querySelectorAll("nav a").forEach(a=>a.addEventListener("click",()=>{document.querySelectorAll("nav a").forEach(x=>x.classList.toggle("active",x===a));}));
-  $("download").addEventListener("click",()=>{const blob=new Blob([JSON.stringify({generated_at:DATA.generated_at,audience:DATA.audience,market,...DATA.markets[market]},null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=el("a");a.href=url;a.download=`sequoia-${market}-${DATA.markets[market].as_of||"snapshot"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+  $("download").addEventListener("click",()=>{const blob=new Blob([JSON.stringify({generated_at:DATA.generated_at,audience:DATA.audience,portfolio,market,...markets()[market]},null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=el("a");a.href=url;a.download=`sequoia-${market}-${markets()[market].as_of||"snapshot"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
   set("mode",DATA.audience==="public"?"公开看板":"本地快照");
   set("updated","生成于 "+new Date(DATA.generated_at).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false}));
   set("basis",DATA.basis);

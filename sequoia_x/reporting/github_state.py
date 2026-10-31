@@ -29,7 +29,7 @@ class StateError(RuntimeError):
 
 def archive_paths(root: Path, valuations: Path | None = None) -> dict[str, Path]:
     paths = {}
-    for name in ("paper.sqlite", "delivery.sqlite", "diagnostics.json", "fundamentals.json", "operations.json"):
+    for name in ("paper.sqlite", "paper-technical.sqlite", "portfolios.json", "delivery.sqlite", "diagnostics.json", "fundamentals.json", "operations.json"):
         p = root / "_state" / name
         if p.exists():
             paths["state/" + name] = p
@@ -54,6 +54,9 @@ def archive_paths(root: Path, valuations: Path | None = None) -> dict[str, Path]
 def encrypted_snapshot(root: Path, key: bytes, valuations: Path | None = None) -> bytes:
     if not (root / "_state" / "paper.sqlite").exists():
         raise StateError("账本缺失，拒绝保存空白状态")
+    marker = root / "_state/portfolios.json"
+    if marker.exists() and not (root / "_state/paper-technical.sqlite").exists():
+        raise StateError("量价账本缺失，拒绝保存不完整状态")
     buffer = io.BytesIO()
     with tempfile.TemporaryDirectory(prefix="sequoia-state-backup-") as directory:
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -92,7 +95,7 @@ def restore_snapshot(token: bytes, root: Path, key: bytes) -> None:
             parts = PurePosixPath(member.name).parts
             if not member.isfile() or ".." in parts or not parts or PurePosixPath(member.name).is_absolute():
                 raise StateError("状态归档包含非法路径")
-            if parts[0] == "state" and len(parts) == 2 and parts[1] in {"paper.sqlite", "delivery.sqlite", "valuations.json", "diagnostics.json", "fundamentals.json", "operations.json"}:
+            if parts[0] == "state" and len(parts) == 2 and parts[1] in {"paper.sqlite", "paper-technical.sqlite", "portfolios.json", "delivery.sqlite", "valuations.json", "diagnostics.json", "fundamentals.json", "operations.json"}:
                 target = root / "_state" / parts[1]
             elif (parts[0] in {"daily", "weekly"} and len(parts) == 3
                   and parts[2] in {"report.json", "paper.json", "cards.json", "report.md", "review.json", "review.md"}):
@@ -107,11 +110,13 @@ def restore_snapshot(token: bytes, root: Path, key: bytes) -> None:
             planned.append((target, archive.extractfile(member).read()))
     if not any(path.name == "paper.sqlite" for path, _ in planned):
         raise StateError("加密状态中没有账本")
+    if any(path.name == "portfolios.json" for path, _ in planned) and not any(path.name == "paper-technical.sqlite" for path, _ in planned):
+        raise StateError("加密状态缺少量价账本")
     for target, content in planned:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
         target.chmod(0o600)
-    for name in ("paper.sqlite", "delivery.sqlite"):
+    for name in ("paper.sqlite", "paper-technical.sqlite", "delivery.sqlite"):
         path = root / "_state" / name
         if path.exists():
             with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as conn:

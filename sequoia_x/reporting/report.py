@@ -108,14 +108,33 @@ def build_report(universe: dict, provider: MarketData, valuations: dict,
                 item["status"] = "待核验：估值未完成"
             elif v == "等待价格":
                 item["status"] = "等待价格：安全边际不足"
-            else:
+            elif v == '有安全边际' and 'values' in item['valuation']:
                 item["status"] = "买入研究候选（非交易指令）"
+            else:
+                item['status'] = '待核验：估值结论未完整识别'
         items.sort(key=lambda x: (x["status"].startswith("买入研究"), x["score"],
                                    x["rps"] or 0, x["symbol"]), reverse=True)
         group["candidate_count"] = sum(x["status"].startswith("买入研究") for x in items)
         group['valuation_ready'] = sum('values' in x['valuation'] for x in items)
-        group['valuation_pending'] = sum(x['valuation']['status'] == '待核验' for x in items)
+        group['valuation_pending'] = sum('values' not in x['valuation'] and x['valuation']['status'] != '否决' for x in items)
         group['confirmed_count'] = sum(x['confirmed'] for x in items)
+        technical = [x for x in items if x['confirmed']]
+        technical_valued = [x for x in technical if 'values' in x['valuation']]
+        group['research_health'] = {
+            'technical_hits': len(technical),
+            'technical_valued': len(technical_valued),
+            'technical_unvalued': len(technical) - len(technical_valued),
+            'technical_margin_failed': sum(x['valuation']['status'] == '等待价格' for x in technical_valued),
+            'coverage_complete': group['complete'] and group['valuation_pending'] == 0,
+        }
+        if not group['complete']:
+            conclusion = '行情不完整，本期无法完成候选筛选；零候选不代表没有值得研究的股票。'
+        elif group['valuation_pending']:
+            conclusion = (f"研究覆盖不足：{group['valuation_pending']}支仍待财报核验或不适用当前模型。"
+                          '零候选只表示当前规则下尚无已确认结果，不能据此判断观察池或市场没有值得买的股票。')
+        else:
+            conclusion = '结论仅适用于本期静态观察池及当前量价/估值规则，不能外推为全市场结论。'
+        group['research_health']['conclusion'] = conclusion
         group["shown"] = items[:top]
         report["markets"].append(group)
     return report
@@ -153,6 +172,15 @@ def item_markdown(item: dict) -> str:
     return "\n".join(lines)
 
 
+def research_health_text(group: dict) -> str:
+    health = group.get('research_health')
+    if not health:
+        return ''
+    return (f"策略命中 {health['technical_hits']} 支 → 其中估值已计算 {health['technical_valued']} 支"
+            f"／尚未完成 {health['technical_unvalued']} 支 → 安全边际不足 {health['technical_margin_failed']} 支。\n"
+            + health['conclusion'])
+
+
 def market_markdown(group: dict) -> str:
     title = "🇺🇸 美股" if group["market"] == "US" else "🇨🇳 A股"
     lines = [f"## {title}｜完整收盘日 {group['as_of']}",
@@ -162,6 +190,8 @@ def market_markdown(group: dict) -> str:
              "股票池：" + ", ".join(group["pool"])]
     if not group["complete"]:
         lines.append("⚠️ 股票池不完整或不足2支：不输出RPS和买入候选；已取到数据仅供观察。")
+    if research_health_text(group):
+        lines.append(research_health_text(group))
     lines += [item_markdown(x) for x in group["shown"]]
     if group["errors"]:
         lines.append("异常：" + "；".join(f"{x['symbol']} {x['reason']}" for x in group["errors"]))
@@ -189,6 +219,8 @@ def render_cards(report: dict) -> list[dict]:
                     f"估值已计算 {group.get('valuation_ready', 0)}｜估值待核验 {group.get('valuation_pending', 0)}｜量价确认 {group.get('confirmed_count', 0)}（须同时满足）\n"
                     "自定义观察池，非全市场排名。估值缺失=待核验。",
                     *(item_markdown(x) for x in group["shown"])]
+        if research_health_text(group):
+            sections.insert(1, research_health_text(group))
         if not group["complete"]:
             sections.insert(1, "⚠️ 股票池不完整或不足2支，RPS与买入候选暂不输出。")
         if group["errors"]:

@@ -21,6 +21,7 @@ from .scheduling import (
     write_operations,
 )
 from .simulation import Simulation, write_json
+from .portfolios import ensure_portfolios
 
 TASKS = {
     "0 9 * * 1-5": "daily_A",
@@ -42,6 +43,9 @@ def data_complete(root, task, day):
     report = json.loads(path.read_text())
     groups = report.get("markets", [])
     complete = bool(groups) and all(g.get("complete") is True for g in groups)
+    for portfolio in report.get("portfolios", {}).values():
+        if not portfolio.get("not_started"):
+            complete = complete and bool(portfolio.get("markets")) and all(g.get("complete") is True for g in portfolio["markets"])
     paper = path.with_name("paper.json")
     if task != "weekly" and paper.exists():
         complete = complete and json.loads(paper.read_text()).get("complete") is True
@@ -252,6 +256,10 @@ def main(argv=None):
                 )
             )
             return 0
+        new_portfolios = not (args.root / "_state/portfolios.json").exists()
+        ensure_portfolios(args.root)
+        if new_portfolios:
+            state.save()
         tasks = due_tasks(datetime.now(timezone.utc)) if task == "due" else [task]
         results = []
         with (

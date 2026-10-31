@@ -29,7 +29,11 @@ def next_session(market: str, day: str) -> str:
 
 
 class PaperBook:
-    def __init__(self, path: Path, slippage_bps: str = "5", fee_per_order: str = "0"):
+    def __init__(self, path: Path, slippage_bps: str = "5", fee_per_order: str = "0",
+                 portfolio: str = "strict_value"):
+        if portfolio not in {"strict_value", "technical"}:
+            raise ValueError("未知组合")
+        self.portfolio = portfolio
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
         self.slippage = number(slippage_bps) / 10000
@@ -55,8 +59,12 @@ class PaperBook:
             """)
             spec = json.dumps({"quantity": 100, "slippage": str(self.slippage), "fee": str(self.fee),
                                "dividends": "excluded", "selling": "hold"}, sort_keys=True)
+            legacy_spec = spec
+            spec = json.dumps({**json.loads(spec), "portfolio": portfolio}, sort_keys=True)
             old = c.execute("SELECT spec FROM policy WHERE id=1").fetchone()
-            if old and old[0] != spec:
+            if old and old[0] == legacy_spec and portfolio == "strict_value":
+                c.execute("UPDATE policy SET spec=? WHERE id=1", (spec,))
+            elif old and old[0] != spec:
                 raise ValueError("账本已有不同费用策略，请使用独立账本，不混算收益")
             c.execute("INSERT OR IGNORE INTO policy VALUES (1,?)", (spec,))
 
@@ -87,9 +95,16 @@ class PaperBook:
                     continue
                 already = c.execute("SELECT COUNT(*) FROM orders WHERE market=? AND signal_date=?",
                                     (market, day)).fetchone()[0]
-                for item in group["shown"]:
-                    if not (item["status"].startswith("买入研究候选") and item["confirmed"]
-                            and item["valuation"]["status"] == "有安全边际" and item["date"] == day):
+                items = group.get("items", group["shown"]) if self.portfolio == "technical" else group["shown"]
+                if self.portfolio == "technical":
+                    items = sorted(items, key=lambda item: (-item.get("score", 0), -item.get("rps", 0), item["symbol"]))
+                for item in items:
+                    eligible = item["confirmed"] and item["date"] == day
+                    if self.portfolio == "strict_value":
+                        eligible = eligible and item["status"].startswith("买入研究候选") and item["valuation"]["status"] == "有安全边际"
+                    else:
+                        eligible = eligible and item.get("valuation", {}).get("status") != "否决"
+                    if not eligible:
                         continue
                     if already >= 10:
                         break
@@ -244,6 +259,24 @@ class PaperBook:
 
 
 def weekly_markdown(report: dict) -> str:
+    if report.get("portfolios"):
+        sections = ["# 双组合周复盘", "仅在同币种内比较；各组合独立投入、独立核算。无投入不计算收益率，不判定胜负。"]
+        sections.append("| 币种 | 组合 | 本周新增投入 | 周价格盈亏 | 周收益率 |\n|---|---|---:|---:|---:|")
+        for key, sub in report["portfolios"].items():
+            label = "严格价值" if key == "strict_value" else "量价实验"
+            for g in sub.get("markets", []):
+                valid = g.get("complete")
+                rate = g.get("weekly_return")
+                percent = f"{rate * 100:.2f}%" if valid and rate is not None else "待核验" if not valid else "无投入"
+                sections[-1] += f"\n| {g['currency']} | {label} | {g.get('new_capital', '—') if valid else '待核验'} | {g.get('weekly_pnl', '—') if valid else '待核验'} | {percent} |"
+        for key, sub in report["portfolios"].items():
+            sections.append("## " + ("严格价值组合" if key == "strict_value" else "量价实验组合"))
+            if sub.get("not_started"):
+                sections.append("尚未到启用后的首个信号交易日，无历史持仓或收益。")
+            else:
+                sections.append(weekly_markdown(sub))
+        sections.append("量价实验组合依据量价确认信号模拟，估值待核验不阻止登记；不代表基本面估值通过。严格价值组合同时要求估值安全边际。")
+        return "\n\n".join(sections)
     lines = [f"# 📒 两市模拟组合周复盘｜{report['week_start']} 至 {report['week_end']}",
              "仅模拟，不连接交易账户。每日每只合格推荐100股，下个交易日开盘模拟成交，重复推荐可加仓。",
              report["basis"], "周收益率=周盈亏/(期初市值+本周新增投入)，非年化、非时间加权收益率。"]
@@ -270,6 +303,12 @@ def weekly_cards(report: dict) -> list[dict]:
     # Each paragraph is a separate element; split before 14KB to respect 20KB bot limit.
     pages, page, size = [], [], 0
     for section in text.split("\n\n"):
+        if section.startswith("| 币种 |"):
+            # Feishu lark_md has no table support; retain a readable same-currency comparison.
+            rows = [row.split("|")[1:-1] for row in section.splitlines()[2:]]
+            section = "同币种对照\n" + "\n".join(
+                f"{r[0].strip()}｜{r[1].strip()}｜本周投入 {r[2].strip()}｜盈亏 {r[3].strip()}｜收益率 {r[4].strip()}"
+                for r in rows)
         n = len(section.encode())
         if size + n > 14000 and page:
             pages.append(page)

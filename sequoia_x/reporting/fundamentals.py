@@ -405,8 +405,11 @@ def owner_cash(row):
     # Cap owner earnings by attributable profit. US SBC is deducted as a real cost.
     cfo, capex, sbc = [number(row[k]) for k in ("cfo", "capex", "sbc")]
     ni, common = number(row["net_income"]), number(row["common_income"])
-    if ni <= 0 or common <= 0 or common > ni * number("1.01"):
-        raise FinancialError("利润为负或归母口径异常")
+    if ni <= 0 or common <= 0:
+        raise FinancialError("合并或归母利润非正，自动模型不适用")
+    # Noncontrolling interests can report losses, so positive parent profit may
+    # legitimately exceed consolidated profit. Independent reconciliation above
+    # still validates both figures; cap the cash allocation at 100% below.
     cash = (cfo - capex - sbc) * min(number(1), common / ni)
     return min(cash, common)
 

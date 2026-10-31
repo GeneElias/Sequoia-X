@@ -22,6 +22,7 @@ from .dashboard import export_dashboard
 from .market import MarketData, latest_session
 from .fundamentals import Fundamentals
 from .paper import PaperBook, weekly_cards, weekly_markdown
+from .portfolios import LABELS, ensure_portfolios
 from .report import DEFAULT_UNIVERSE, build_report, render_cards, render_markdown
 
 
@@ -46,6 +47,12 @@ class Simulation:
         self.book = PaperBook(root / "_state" / "paper.sqlite", slippage_bps, fee_per_order)
         self.provider = MarketData(root / "_state" / "cache")
 
+    def portfolios(self, now):
+        config = ensure_portfolios(self.root, now, str((self.book.slippage * 10000).normalize()), str(self.book.fee))
+        technical = PaperBook(self.root / "_state/paper-technical.sqlite", str((self.book.slippage * 10000).normalize()),
+                              str(self.book.fee), portfolio="technical")
+        return config, {"strict_value": self.book, "technical": technical}
+
     def deliver(self, cards: list[dict]) -> dict:
         if not self.send:
             return {"status": "preview_only"}
@@ -69,27 +76,46 @@ class Simulation:
         valuations = (json.loads(self.valuations_path.read_text())
                       if self.valuations_path and self.valuations_path.exists() else {})
         markets = ["A", "US"] if market == "both" else [market]
+        config, books = self.portfolios(now)
         output = []
         for code in markets:
             as_of = latest_session(code, now)
             automatic = Fundamentals(self.root / '_state/fundamentals.json').refresh(code, DEFAULT_UNIVERSE[code], as_of)
             inputs = {**automatic, **valuations}  # Explicit manual inputs take precedence.
-            summary = self.book.settle(code, as_of, self.provider)
             report = build_report({code: DEFAULT_UNIVERSE[code]}, self.provider, inputs, now=now)
-            summary["new_orders"] = self.book.register(report, now=datetime.now(timezone.utc) if live_clock else now)
             cards = render_cards(report)
-            with self.book.connect() as conn:
-                signals = conn.execute("SELECT symbol,execution_date,state FROM orders WHERE market=? AND signal_date=? ORDER BY symbol",
-                                       (code, as_of)).fetchall()
-            note = (f"仅模拟｜当日合格信号登记 {len(signals)} 笔，每只100股，下个交易日开盘模拟成交。\n"
-                    f"累计订单状态：{json.dumps(summary['orders'], ensure_ascii=False)}（新增信号另见账本）\n"
-                    f"累计虚拟投入 {summary['contributed']} {'CNY' if code=='A' else 'USD'}；"
-                    f"滑点{self.book.slippage*10000}bp、手续费{self.book.fee}/笔；价格收益不含股息税费；同日信号去重，持有不卖。")
+            summaries, notes = {}, []
+            for identity, book in books.items():
+                label = LABELS[identity]
+                if identity == "technical" and as_of < config["technical_first_signal"][code]:
+                    summaries[identity] = {"not_started": True, "new_orders": 0, "complete": True}
+                    notes.append(f"{label}：首个可登记信号日 {config['technical_first_signal'][code]}，不补建历史持仓。")
+                    continue
+                account = book.settle(code, as_of, self.provider)
+                account["new_orders"] = book.register(report, now=datetime.now(timezone.utc) if live_clock else now)
+                summaries[identity] = account
+                with book.connect() as conn:
+                    signals = conn.execute("SELECT symbol,execution_date,state FROM orders WHERE market=? AND signal_date=? ORDER BY symbol",
+                                           (code, as_of)).fetchall()
+                note = (f"**{label}｜仅模拟**\n当日信号 {len(signals)} 笔，每只100股，下个交易日开盘模拟成交。\n"
+                        f"累计订单：{json.dumps(account['orders'], ensure_ascii=False)}；"
+                        f"累计虚拟投入 {account['contributed']} {'CNY' if code=='A' else 'USD'}。\n"
+                        f"滑点{book.slippage*10000}bp，手续费{book.fee}/笔；不含股息税费；同日去重，持有不卖。")
+                if identity == "technical":
+                    note += "\n依据量价确认信号；估值待核验不阻止登记，不代表基本面估值通过。"
+                else:
+                    note += "\n同时要求量价确认与估值安全边际通过。"
+                if signals:
+                    note += "\n" + "；".join(f"{r['symbol']} 100股，预计{r['execution_date']}（{r['state']}）" for r in signals)
+                notes.append(note)
+            summary = {**summaries["strict_value"], "portfolios": summaries,
+                       "complete": all(x.get("complete") is True for x in summaries.values())}
             if report['markets'][0].get('execution_blocked_reason'):
-                note += '\n' + report['markets'][0]['execution_blocked_reason']
-            if signals:
-                note += "\n" + "；".join(f"{r['symbol']} 100股，预计{r['execution_date']}（{r['state']}）" for r in signals)
-            cards[-1]["card"]["elements"].append({"tag": "div", "text": {"tag": "lark_md", "content": note}})
+                notes.append(report['markets'][0]['execution_blocked_reason'])
+            note = "\n\n".join(notes)
+            # Separate elements keep the additional independent portfolio note readable.
+            for text in notes:
+                cards[-1]["card"]["elements"].append({"tag": "div", "text": {"tag": "lark_md", "content": text}})
             directory = self.root / "paper" / "daily" / f"{as_of}-{code}"
             directory.mkdir(parents=True, exist_ok=True)
             write_json(directory / "report.json", report)
@@ -99,6 +125,7 @@ class Simulation:
             summary["delivery"] = self.deliver(cards)
             write_json(directory / "paper.json", summary)
             output.append({"market": code, "as_of": as_of, "new_orders": summary["new_orders"],
+                           "new_orders_by_portfolio": {key: value["new_orders"] for key, value in summaries.items()},
                            "report": str(directory / "report.md"), "delivery": summary["delivery"]})
         export_dashboard(self.root, self.root / "dashboard")
         return {"daily": output}
@@ -108,12 +135,20 @@ class Simulation:
         if week_end is None:
             local = now.astimezone(ZoneInfo("Asia/Shanghai")).date()
             week_end = str(local - timedelta(days=(local.weekday() - 4) % 7))
-        # Refresh holdings to the current complete session, never register new signals here.
-        for market in ("A", "US"):
-            self.book.settle(market, latest_session(market, now), self.provider)
-        report = self.book.weekly(week_end)
-        report["cost_policy"] = {"slippage_bps": str(self.book.slippage * 10000),
-                                 "fee_per_order": str(self.book.fee)}
+        config, books = self.portfolios(now)
+        reviews = {}
+        for identity, book in books.items():
+            active = [market for market in ("A", "US") if identity == "strict_value" or
+                      latest_session(market, now) >= config["technical_first_signal"][market]]
+            for market in active:
+                book.settle(market, latest_session(market, now), self.provider)
+            review = book.weekly(week_end)
+            review["cost_policy"] = {"slippage_bps": str(book.slippage * 10000), "fee_per_order": str(book.fee)}
+            if identity == "technical":
+                review["markets"] = [g for g in review["markets"] if week_end >= config["technical_first_signal"][g["market"]]]
+                review["not_started"] = not review["markets"]
+            reviews[identity] = review
+        report = {**reviews["strict_value"], "portfolios": reviews}
         cards = weekly_cards(report)
         directory = self.root / "paper" / "weekly" / week_end
         directory.mkdir(parents=True, exist_ok=True)
