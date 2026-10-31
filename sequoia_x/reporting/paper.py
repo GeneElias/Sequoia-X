@@ -278,7 +278,7 @@ def weekly_markdown(report: dict) -> str:
         sections.append("量价实验组合依据量价确认信号模拟，估值待核验不阻止登记；不代表基本面估值通过。严格价值组合同时要求估值安全边际。")
         return "\n\n".join(sections)
     lines = [f"# 📒 两市模拟组合周复盘｜{report['week_start']} 至 {report['week_end']}",
-             "仅模拟，不连接交易账户。每日每只合格推荐100股，下个交易日开盘模拟成交，重复推荐可加仓。",
+             "仅模拟，不连接交易账户。每日每只有效策略信号100股，下个交易日开盘模拟成交，重复信号可加仓。",
              report["basis"], "周收益率=周盈亏/(期初市值+本周新增投入)，非年化、非时间加权收益率。"]
     if report.get("cost_policy"):
         p = report["cost_policy"]
@@ -294,7 +294,10 @@ def weekly_markdown(report: dict) -> str:
                   f"**本周价格盈亏 {g['weekly_pnl']} {g['currency']}｜收益率 {percent}**",
                   f"累计投入 {g['contributed']}｜累计价格盈亏 {g['total_pnl']}｜累计模拟手续费 {g['fees']}"]
         lines.extend(f"{p['symbol']}：{p['quantity']} 股｜市值 {p['value']}｜价格盈亏 {p['pnl']}" for p in g["positions"])
-    lines.append("无合格推荐则不买；不将观察项或估值待核验项偷换为推荐。未设置卖出策略，收益为持仓浮动价格收益。")
+    if report.get("portfolio") == "technical":
+        lines.append("量价实验组合按有效量价确认信号模拟；估值意见单独展示，不代表价值认可。未设置卖出策略，收益为持仓浮动价格收益。")
+    else:
+        lines.append("无合格推荐则不买；不将观察项或估值待核验项偷换为推荐。未设置卖出策略，收益为持仓浮动价格收益。")
     return "\n\n".join(lines)
 
 

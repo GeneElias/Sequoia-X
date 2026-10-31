@@ -143,6 +143,7 @@ class Simulation:
             for market in active:
                 book.settle(market, latest_session(market, now), self.provider)
             review = book.weekly(week_end)
+            review["portfolio"] = identity
             review["cost_policy"] = {"slippage_bps": str(book.slippage * 10000), "fee_per_order": str(book.fee)}
             if identity == "technical":
                 review["markets"] = [g for g in review["markets"] if week_end >= config["technical_first_signal"][g["market"]]]

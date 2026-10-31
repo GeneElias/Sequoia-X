@@ -44,4 +44,4 @@ jobs:
           FEISHU_REPORT_SECRET: ${{ secrets.FEISHU_REPORT_SECRET }}
           FEISHU_DASHBOARD_URL: ${{ vars.FEISHU_DASHBOARD_URL || 'https://geneelias.github.io/Sequoia-X/' }}
 
-# Verify independent technical/value ledgers and forward-only activation.
+# Verify independent ledgers, forward-only activation and portfolio-specific report wording.

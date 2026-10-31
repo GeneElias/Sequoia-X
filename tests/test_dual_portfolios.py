@@ -185,6 +185,9 @@ def test_daily_retry_and_weekly_review_keep_both_books_independent(tmp_path, mon
     assert strict["contributed"] == "0" and strict["weekly_return"] is None
     assert float(tech["weekly_pnl"]) == 495 and tech["fill_count"] == 1
     assert tech["weekly_return"] > 0
+    technical_text = weekly_markdown(review["portfolios"]["technical"])
+    assert "估值意见单独展示" in technical_text
+    assert "不将观察项或估值待核验项" not in technical_text
 
 
 def test_first_deployment_daily_does_not_register_old_technical_signal(tmp_path, monkeypatch):

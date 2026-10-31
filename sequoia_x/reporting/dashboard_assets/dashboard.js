@@ -78,6 +78,9 @@
     set("pnl",last?money(last.pnl):"—");tone($("pnl"),last?.pnl);set("return",last?percent(last.return):"—");tone($("return"),last?.return);
     set("return-note",invested?"价格盈亏 / 累计虚拟投入，非年化":"无投入，不计算收益率");
     set("counts",DATA.audience==="public"?"— / —":`${m.candidate_count} / ${m.fill_count??m.fills.length}`);
+    set("discipline-title",portfolio==="technical"?"量价实验，独立验证。":"先核验，再入场。");
+    set("valuation-rule",portfolio==="technical"?"估值意见单列；待核验不阻止模拟":"财报来源、三情景、安全边际");
+    set("candidate-label",portfolio==="technical"?"量价确认信号":"合格推荐");
     set("portfolio-rule",portfolio==="technical"?"量价信号独立模拟 · 估值意见单列":"量价与估值双重通过 · 严格价值组合");
     set("notice",DATA.audience==="public"?"公开页面尚未发布真实数据。研究报告与模拟账本通过飞书和加密状态保存；这里不填充虚构内容。":!m.complete?"数据待补齐：观察池未完整取数，暂停RPS和买入推荐。":portfolio==="technical"?`量价实验组合：首个信号日 ${m.first_signal||"待启用"}。估值待核验不阻止模拟登记；不代表基本面估值通过。`:m.candidate_count===0?"严格价值组合暂无合格项；估值覆盖不足也会造成零推荐，不能据此判断市场没有机会。":"合格推荐仅供研究；模拟订单在下一交易日开盘结算，不使用未来价格补单。");
     const delivery={blocked_missing_webhook:"飞书待配置 · 日报已保存在本地",preview_only:"本地预览 · 未发送到飞书",attempted:"飞书已尝试发送 · 以发送账本为准"};set("delivery",DATA.audience==="public"?"真实报告通过飞书推送":delivery[m.delivery]||"飞书发送状态待核验");
