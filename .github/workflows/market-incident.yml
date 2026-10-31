@@ -1,0 +1,27 @@
+name: Read-only market incident probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths: [.github/workflows/market-incident.yml]
+permissions:
+  contents: write
+concurrency:
+  group: sequoia-paper-state
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra reports --extra github --extra dev --python 3.12
+      - run: .venv/bin/python -m sequoia_x.reporting.incident_probe
+        env:
+          SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
