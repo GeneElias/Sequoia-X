@@ -2,11 +2,12 @@ name: Sequoia daily research and weekly paper review
 
 on:
   schedule:
-    - cron: '0 9 * * 1-5'
-    - cron: '30 23 * * 1-5'
-    - cron: '0 1 * * 6'
-    # Off-peak recovery checks; encrypted receipts suppress completed sessions.
-    - cron: '13,43 * * * *'
+    # Wake shortly after the Shanghai reporting deadlines, away from peak minutes.
+    - cron: '7 9 * * 1-5'
+    - cron: '37 23 * * 1-5'
+    - cron: '7 1 * * 6'
+    # Catch delayed or missed runs; encrypted receipts suppress completed sessions.
+    - cron: '19,49 * * * *'
   workflow_dispatch:
     inputs:
       task:
@@ -45,13 +46,7 @@ jobs:
           SEQUOIA_STATE_KEY: ${{ secrets.SEQUOIA_STATE_KEY }}
           FEISHU_REPORT_WEBHOOK_URL: ${{ secrets.FEISHU_REPORT_WEBHOOK_URL }}
           FEISHU_REPORT_SECRET: ${{ secrets.FEISHU_REPORT_SECRET }}
-          SEQUOIA_CRON: ${{ github.event.schedule }}
-          SEQUOIA_TASK: ${{ inputs.task }}
+          SEQUOIA_TASK: ${{ github.event_name == 'schedule' && 'due' || inputs.task || 'selftest' }}
           SEQUOIA_SCHEDULE_PAUSED: ${{ vars.SEQUOIA_ENABLED == 'false' }}
           FEISHU_DASHBOARD_URL: ${{ vars.FEISHU_DASHBOARD_URL || 'https://geneelias.github.io/Sequoia-X/' }}
-        run: |
-          if [ -n "$SEQUOIA_TASK" ]; then
-            .venv/bin/python -m sequoia_x.reporting.github_runner --task "$SEQUOIA_TASK"
-          else
-            .venv/bin/python -m sequoia_x.reporting.github_runner
-          fi
+        run: .venv/bin/python -m sequoia_x.reporting.github_runner --task "$SEQUOIA_TASK"
