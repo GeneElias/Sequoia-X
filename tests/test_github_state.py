@@ -118,5 +118,8 @@ def test_live_workflow_can_pause_is_serial_and_preserves_timezone():
     text = Path('.github/workflows/research-schedule.yml').read_text()
     assert "vars.SEQUOIA_ENABLED != 'false'" in text
     assert "cancel-in-progress: false" in text and "contents: write" in text
-    assert all(cron in text for cron in ('0 9 * * 1-5','30 23 * * 1-5','0 1 * * 6','13,43 * * * *'))
+    schedules = ('7 9 * * 1-5', '37 23 * * 1-5', '7 1 * * 6', '19,49 * * * *')
+    assert all(f"- cron: '{cron}'" in text for cron in schedules)
+    assert "github.event_name == 'schedule' && 'due' || inputs.task || 'selftest'" in text
+    assert '--task "$SEQUOIA_TASK"' in text
     assert 'pull_request:' not in text and 'upload-artifact' not in text
